@@ -32,24 +32,18 @@ func main() {
 		var err error
 		filePatternRegex, err = regexp.Compile(filePattern)
 		if err != nil {
-			if !verbose {
-				fmt.Println("Error compiling file pattern regex:", err)
-			}
+			fmt.Println("Error compiling file pattern regex:", err)
 			os.Exit(1)
 		}
 	}
 	if contentsPattern == "" {
-		if !verbose {
-			fmt.Println("Error: contents pattern regex is required")
-		}
+		fmt.Println("Error: contents pattern regex is required")
 		os.Exit(1)
 	}
 	var err error
 	contentsPatternRegex, err = regexp.Compile(contentsPattern)
 	if err != nil {
-		if !verbose {
-			fmt.Println("Error compiling contents pattern regex:", err)
-		}
+    	fmt.Println("Error compiling contents pattern regex:", err)
 		os.Exit(1)
 	}
 
@@ -66,6 +60,10 @@ func main() {
 			return nil
 		}
 
+		if verbose {
+			fmt.Println("Matching file:", path)
+		}
+
 		file, err := os.Open(path)
 		if err != nil {
 			return err
@@ -77,7 +75,8 @@ func main() {
 			head := make([]byte, 512) // read the first 512 bytes of the file
 			_, err = file.Read(head)
 			if err != nil {
-				return err
+				fmt.Printf("Error reading file %s: %v\n", path, err)
+				return nil
 			}
 			// check if there are any nulbytes in the head of the file
 			if bytes.Contains(head, []byte{0}) {
@@ -85,7 +84,8 @@ func main() {
 			}
 			_, err = file.Seek(0, 0) // reset file pointer to the beginning of the file
 			if err != nil {
-				return err
+				fmt.Printf("Error resetting file pointer for %s: %v\n", path, err)
+				return nil
 			}
 		}
 
@@ -100,18 +100,14 @@ func main() {
 			lineNumber++
 		}
 		if err := scanner.Err(); err != nil {
-			if err.Error() == "bufio.Scanner: token too long" {
-				fmt.Printf("Skipping file %s due to too long token\n", path)
-				return nil
-			} else {
-				return err
-			}
+			fmt.Printf("Error scanning file %s: %v\n", path, err)
+			return nil
 		}
 
 		return nil
 	})
+
 	if err != nil {
-		fmt.Println("Error:", err)
-		return
+		fmt.Printf("Error walking directories: %v\n", err)
 	}
 }
