@@ -2,11 +2,11 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
-    "bytes"
 
 	"github.com/spf13/pflag"
 )
@@ -73,43 +73,43 @@ func main() {
 		defer file.Close()
 
 		// Check if file is binary and skip if not set to include binary files
-        if !binary {
-            head := make([]byte, 512) // read the first 512 bytes of the file
-            _, err = file.Read(head)
-            if err != nil {
-                return err
-            }
-            // check if there are any nulbytes in the head of the file
-            if bytes.Contains(head, []byte{0}) {
-                return nil
-            }
-            _, err = file.Seek(0, 0) // reset file pointer to the beginning of the file
-            if err != nil {
-                return err
-            }
-        }
-        
-        scanner := bufio.NewScanner(file)
-        scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // set buffer size to 1MB
-        lineNumber := 1
-        for scanner.Scan() {
-            line := scanner.Text()
-            if contentsPatternRegex.MatchString(line) {
-                fmt.Printf("%s:%d:%s\n", path, lineNumber, line)
-            }
-            lineNumber++
-        }
-        if err := scanner.Err(); err != nil {
-            if err.Error() == "bufio.Scanner: token too long" {
-                fmt.Printf("Skipping file %s due to too long token\n", path)
-                return nil
-            } else {
-                return err
-            }
-        }
-    
-        return nil
-    })
+		if !binary {
+			head := make([]byte, 512) // read the first 512 bytes of the file
+			_, err = file.Read(head)
+			if err != nil {
+				return err
+			}
+			// check if there are any nulbytes in the head of the file
+			if bytes.Contains(head, []byte{0}) {
+				return nil
+			}
+			_, err = file.Seek(0, 0) // reset file pointer to the beginning of the file
+			if err != nil {
+				return err
+			}
+		}
+
+		scanner := bufio.NewScanner(file)
+		scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // set buffer size to 1MB
+		lineNumber := 1
+		for scanner.Scan() {
+			line := scanner.Text()
+			if contentsPatternRegex.MatchString(line) {
+				fmt.Printf("%s:%d:%s\n", path, lineNumber, line)
+			}
+			lineNumber++
+		}
+		if err := scanner.Err(); err != nil {
+			if err.Error() == "bufio.Scanner: token too long" {
+				fmt.Printf("Skipping file %s due to too long token\n", path)
+				return nil
+			} else {
+				return err
+			}
+		}
+
+		return nil
+	})
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
