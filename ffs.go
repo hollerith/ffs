@@ -37,11 +37,10 @@ func main() {
 	pflag.StringP("file", "f", "", "regex pattern to match file names")
 	pflag.StringVarP(&stringPattern,"string", "s", "", "regex pattern to match file string")
 	pflag.StringVarP(&hexPattern,"hex", "h", "", "regex pattern to match hex-encoded lines")
-	pflag.StringVarP(&root, "root", "r", ".", "root directory to start the search from")
 	pflag.BoolP("verbose", "v", false, "enable verbose mode")
 	pflag.BoolP("binary", "b", false, "include binary files in search")
     pflag.Parse()
-	
+
     rootArgs := pflag.Args()
     if len(rootArgs) > 0 {
         root = rootArgs[0]
