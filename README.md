@@ -31,6 +31,7 @@ OPTIONS
 
 EXAMPLES
        Search for all files with the word "example" in their name under the current directory:
+       
               ffs -f "example" .
 
        Search for all files with the word "password" in their contents under the current directory:
