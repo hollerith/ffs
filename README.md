@@ -36,7 +36,7 @@ EXAMPLES
 
        Search to exclude the node_modules directory from the search:
 
-       ffs -f '^(?!.*node_modules).*$' -m 'react'
+       ffs -f '^(!.*node_modules).*$' -m 'react'
 
 AUTHOR
        This program was written by Eliot Alderson.
