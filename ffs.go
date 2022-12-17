@@ -43,13 +43,14 @@ func main() {
 	var err error
 	contentsPatternRegex, err = regexp.Compile(contentsPattern)
 	if err != nil {
-    	fmt.Println("Error compiling contents pattern regex:", err)
+		fmt.Println("Error compiling contents pattern regex:", err)
 		os.Exit(1)
 	}
 
 	err = filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return err
+			fmt.Printf("Error processing file %s: %v\n", path, err)
+			return nil
 		}
 
 		if info.IsDir() {
@@ -66,7 +67,8 @@ func main() {
 
 		file, err := os.Open(path)
 		if err != nil {
-			return err
+			fmt.Printf("Error opening file %s: %v\n", path, err)
+			return nil
 		}
 		defer file.Close()
 
