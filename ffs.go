@@ -16,11 +16,13 @@ func main() {
 	var contentsPatternRegex *regexp.Regexp
 	var verbose bool
 	var binary bool
+	var root string // variable to hold the value of the root parameter
 
 	pflag.StringP("file", "f", "", "regex pattern to match file names")
 	pflag.StringP("match", "m", "", "regex pattern to match file contents")
 	pflag.BoolP("verbose", "v", false, "enable verbose mode")
 	pflag.BoolP("binary", "b", false, "include binary files in search")
+	pflag.StringVarP(&root, "root", "r", ".", "root directory to start the search from") // add the root parameter
 	pflag.Parse()
 
 	filePattern := pflag.Lookup("file").Value.String()
@@ -47,7 +49,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	err = filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			fmt.Printf("Error processing file %s: %v\n", path, err)
 			return nil
