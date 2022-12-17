@@ -34,6 +34,7 @@ EXAMPLES
               ffs -f "example" .
 
        Search for all files with the word "password" in their contents under the current directory:
+       
               ffs -s "password" .
 
        Search for all files with the hex encoded string "50 61 73 73 77 6f 72 64" in their contents
@@ -43,11 +44,11 @@ EXAMPLES
 
        Search for python files containing the string "import" and print the matching lines:
 
-       ffs -f "\.py$" -s "import"
+              ffs -f "\.py$" -s "import"
 
        Search for .c files containing the string "strcpy" and print the matching lines:
 
-       ffs -f "\.c$" -s "strcpy"
+              ffs -f "\.c$" -s "strcpy"
 
        Search for files with names matching the pattern .log.\d, where \d is a digit, and for lines 
        that start with a datetime stamp in the range of 9:00:00 to 15:59:59. The ^ character indicates
@@ -56,11 +57,11 @@ EXAMPLES
        The :[0-5][0-9]:[0-5][0-9] pattern matches any value in the range of 00:00 to 59:59 for the 
        minutes and seconds.
 
-       ffs -f "\.log\.\d$" -s "^(09|10|11|12|13|14|15):[0-5][0-9]:[0-5][0-9]"
+              ffs -f "\.log\.\d$" -s "^(09|10|11|12|13|14|15):[0-5][0-9]:[0-5][0-9]"
 
        Search to exclude the node_modules directory from the search:
 
-       ffs -f '^(!.*node_modules).*$' -s 'react'
+              ffs -f '^(!.*node_modules).*$' -s 'react'
 
 AUTHOR
        Eliot Alderson
