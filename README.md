@@ -7,7 +7,10 @@ SYNOPSIS
        ffs [OPTION]... [ROOT]
 
 DESCRIPTION
-       ffs searches for regex patterns in files and prints the matching lines. The search can be limited to specific file names or file contents using the -f and -s options, respectively, or to hex-encoded lines using the -h option. The -b option can be used to include binary files in the search. The search starts at the specified ROOT directory, or the current directory if none is provided.
+       ffs searches for regex patterns in files and prints the matching lines. The search can be limited to specific file names 
+       or file contents using the -f and -s options, respectively, or to hex-encoded lines using the -h option. 
+       The -b option can be used to include binary files in the search. The search starts at the specified ROOT directory, 
+       or the current directory if none is provided.
 
 OPTIONS
        -f, --file
