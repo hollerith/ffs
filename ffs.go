@@ -8,8 +8,12 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"net/http"
+	"io"
 
-	"github.com/spf13/pflag"
+	"github.com/rwcarlsen/goexif/exif"
+
+	"github.com/spf13/pflag" 
 )
 
 func replaceNonPrintable(s string) string {
@@ -20,6 +24,39 @@ func replaceNonPrintable(s string) string {
 		}
 	}
 	return string(b)
+}
+
+func extractMetadata(file *os.File) ([]string, error) {
+	var metadata []string
+
+	// Extract MIME type
+	buf := make([]byte, 512)
+	_, err := file.Read(buf)
+	if err != nil {
+		return metadata, err
+	}
+	mimeType := http.DetectContentType(buf)
+	metadata = append(metadata, fmt.Sprintf("MIME type: %s", mimeType))
+
+	file.Seek(0, 0) // reset file pointer to the beginning of the file
+
+	// Extract EXIF metadata
+	exifData, err := exif.Decode(file)
+	if err != nil {
+		if err == io.EOF {
+			return metadata, fmt.Errorf("EOF reached while reading file")
+		}
+		return metadata, err
+	}
+	
+	// Convert EXIF metadata to JSON string
+	jsonByte, err := exifData.MarshalJSON()
+	if err != nil {
+		return metadata, err
+	}
+	metadata = append(metadata, fmt.Sprintf("EXIF metadata: %s", string(jsonByte)))
+
+	return metadata, nil
 }
 
 func main() {
@@ -33,12 +70,14 @@ func main() {
 	var root string
     var fileCount int
     var matchCount int
+    var metaPattern string
 
 	pflag.StringP("file", "f", "", "regex pattern to match file names")
 	pflag.StringVarP(&stringPattern,"string", "s", "", "regex pattern to match file string")
 	pflag.StringVarP(&hexPattern,"hex", "h", "", "regex pattern to match hex-encoded lines")
 	pflag.BoolP("verbose", "v", false, "enable verbose mode")
 	pflag.BoolP("binary", "b", false, "include binary files in search")
+    pflag.StringVarP(&metaPattern,"meta", "m", "", "regex pattern to match file metadata lines")
     pflag.Parse()
 
     rootArgs := pflag.Args()
@@ -59,8 +98,8 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	if stringPattern == "" && hexPattern == "" {
-		fmt.Println("Error: string or hex pattern regex is required")
+	if stringPattern == "" && hexPattern == "" && metaPattern == "" {
+		fmt.Println("Error: string, hex, or meta pattern regex is required")
 		os.Exit(1)
 	}
 
@@ -70,6 +109,7 @@ func main() {
 		fmt.Println("Error compiling string pattern regex:", err)
 		os.Exit(1)
 	}
+
 	var hexPatternRegex *regexp.Regexp
 	if hexPattern != "" {
 		var err error
@@ -110,6 +150,31 @@ func main() {
 		}
 		defer file.Close()
 
+		// Check for metadata pattern match
+		if metaPattern != "" {
+			metaData, err := extractMetadata(file)
+			if err != nil {
+				if verbose {
+					fmt.Printf("Error extracting metadata from file %s: %v\n", path, err)
+				}
+			}
+
+			var metaPatternRegex *regexp.Regexp
+			metaPatternRegex, err = regexp.Compile(metaPattern)
+			if err != nil {
+				fmt.Println("Error compiling metadata pattern regex:", err)
+				os.Exit(1)
+			}
+
+			for _, line := range metaData {
+				if metaPatternRegex.MatchString(line) {
+					matchCount++
+					fmt.Printf("%s:%s\n", path, line)
+					break
+				}
+			}
+		}
+
 		// Check if file is binary and skip if not set to include binary files
 		if !binary {
 			// Get file size
@@ -130,8 +195,10 @@ func main() {
 			head := make([]byte, numBytes) // read the head
 			_, err = file.Read(head)
 			if err != nil {
-				fmt.Printf("Error reading file %s: %v\n", path, err)
-				return nil
+				if verbose {
+					fmt.Printf("Error reading file %s: %v\n", path, err)
+					return nil
+				}
 			}
 			// check if there are any nulbytes in the head of the file
 			if bytes.Contains(head, []byte{0}) {
