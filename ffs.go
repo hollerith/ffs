@@ -268,6 +268,9 @@ func main() {
         if hexPattern != "" {
             fmt.Println("- hex pattern:", hexPattern)
         }
+        if metaPattern != "" {
+            fmt.Println("- meta pattern:", metaPattern)
+        }
         fmt.Println("- root directory:", root)
         fmt.Println("- binary files:", binary)
         fmt.Println("Number of matches:")
