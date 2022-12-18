@@ -16,49 +16,6 @@ import (
 	"github.com/spf13/pflag" 
 )
 
-func replaceNonPrintable(s string) string {
-	b := []byte(s)
-	for i, c := range b {
-		if !strconv.IsPrint(rune(c)) {
-			b[i] = '.'
-		}
-	}
-	return string(b)
-}
-
-func extractMetadata(file *os.File) ([]string, error) {
-	var metadata []string
-
-	// Extract MIME type
-	buf := make([]byte, 512)
-	_, err := file.Read(buf)
-	if err != nil {
-		return metadata, err
-	}
-	mimeType := http.DetectContentType(buf)
-	metadata = append(metadata, fmt.Sprintf("MIME type: %s", mimeType))
-
-	file.Seek(0, 0) // reset file pointer to the beginning of the file
-
-	// Extract EXIF metadata
-	exifData, err := exif.Decode(file)
-	if err != nil {
-		if err == io.EOF {
-			return metadata, fmt.Errorf("EOF reached while reading file")
-		}
-		return metadata, err
-	}
-	
-	// Convert EXIF metadata to JSON string
-	jsonByte, err := exifData.MarshalJSON()
-	if err != nil {
-		return metadata, err
-	}
-	metadata = append(metadata, fmt.Sprintf("EXIF metadata: %s", string(jsonByte)))
-
-	return metadata, nil
-}
-
 func main() {
 	var filePatternRegex *regexp.Regexp
 	var stringPatternRegex *regexp.Regexp
@@ -277,4 +234,47 @@ func main() {
         fmt.Println("- files:", fileCount)
         fmt.Println("- matches:", matchCount)
     }	
+}
+
+func replaceNonPrintable(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if !strconv.IsPrint(rune(c)) {
+			b[i] = '.'
+		}
+	}
+	return string(b)
+}
+
+func extractMetadata(file *os.File) ([]string, error) {
+	var metadata []string
+
+	// Extract MIME type
+	buf := make([]byte, 512)
+	_, err := file.Read(buf)
+	if err != nil {
+		return metadata, err
+	}
+	mimeType := http.DetectContentType(buf)
+	metadata = append(metadata, fmt.Sprintf("MIME type: %s", mimeType))
+
+	file.Seek(0, 0) // reset file pointer to the beginning of the file
+
+	// Extract EXIF metadata
+	exifData, err := exif.Decode(file)
+	if err != nil {
+		if err == io.EOF {
+			return metadata, fmt.Errorf("EOF reached while reading file")
+		}
+		return metadata, err
+	}
+	
+	// Convert EXIF metadata to JSON string
+	jsonByte, err := exifData.MarshalJSON()
+	if err != nil {
+		return metadata, err
+	}
+	metadata = append(metadata, fmt.Sprintf("EXIF metadata: %s", string(jsonByte)))
+
+	return metadata, nil
 }
