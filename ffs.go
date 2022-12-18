@@ -2,13 +2,13 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"net/http"
+	"strings"
 	"io"
 
 	"github.com/rwcarlsen/goexif/exif"
@@ -22,19 +22,24 @@ func main() {
     var filePattern string
     var stringPattern string
     var hexPattern string
+    var metaPattern string
 	var verbose bool
 	var binary bool
+	var errors bool
 	var root string
     var fileCount int
     var matchCount int
-    var metaPattern string
+	var err error
 
 	pflag.StringP("file", "f", "", "regex pattern to match file names")
 	pflag.StringVarP(&stringPattern,"string", "s", "", "regex pattern to match file string")
 	pflag.StringVarP(&hexPattern,"hex", "h", "", "regex pattern to match hex-encoded lines")
+    pflag.StringVarP(&metaPattern,"meta", "m", "", "regex pattern to match file metadata lines")
 	pflag.BoolP("verbose", "v", false, "enable verbose mode")
 	pflag.BoolP("binary", "b", false, "include binary files in search")
-    pflag.StringVarP(&metaPattern,"meta", "m", "", "regex pattern to match file metadata lines")
+	pflag.BoolP("errors", "e", false, "print errors encountered during execution")
+	pflag.Parse()
+	
     pflag.Parse()
 
     rootArgs := pflag.Args()
@@ -46,9 +51,9 @@ func main() {
 
 	verbose = pflag.Lookup("verbose").Value.String() == "true"
 	binary = pflag.Lookup("binary").Value.String() == "true"
+	errors = pflag.Lookup("errors").Value.String() == "true"
 
 	if filePattern != "" {
-		var err error
 		filePatternRegex, err = regexp.Compile(filePattern)
 		if err != nil {
 			fmt.Println("Error compiling file pattern regex:", err)
@@ -60,7 +65,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	var err error
 	stringPatternRegex, err = regexp.Compile(stringPattern)
 	if err != nil {
 		fmt.Println("Error compiling string pattern regex:", err)
@@ -69,7 +73,6 @@ func main() {
 
 	var hexPatternRegex *regexp.Regexp
 	if hexPattern != "" {
-		var err error
 		hexPatternRegex, err = regexp.Compile(hexPattern)
 		if err != nil {
 			fmt.Println("Error compiling hex pattern regex:", err)
@@ -79,7 +82,7 @@ func main() {
 
 	err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-            if verbose {
+            if errors {
                 fmt.Printf("Error processing file %s: %v\n", path, err)
             }    
 			return nil
@@ -100,22 +103,23 @@ func main() {
 
 		file, err := os.Open(path)
 		if err != nil {
-            if verbose {
+            if errors {
                 fmt.Printf("Error opening file %s: %v\n", path, err)
             }            
 			return nil
 		}
 		defer file.Close()
 
+		// Extract metadata and other file information
+		metaData, isBinary, err := extractFileData(file)
+		if err != nil {
+			if errors {
+				fmt.Printf("Error extracting information from the file %s: %v\n", path, err)
+			}
+		}
+
 		// Check for metadata pattern match
 		if metaPattern != "" {
-			metaData, err := extractMetadata(file)
-			if err != nil {
-				if verbose {
-					fmt.Printf("Error extracting metadata from file %s: %v\n", path, err)
-				}
-			}
-
 			var metaPatternRegex *regexp.Regexp
 			metaPatternRegex, err = regexp.Compile(metaPattern)
 			if err != nil {
@@ -133,45 +137,12 @@ func main() {
 		}
 
 		// Check if file is binary and skip if not set to include binary files
-		if !binary {
-			// Get file size
-			fileInfo, err := file.Stat()
-			if err != nil {
-                if verbose {
-                    fmt.Printf("Error getting file info for %s: %v\n", path, err)
-                }                
-				return nil
-			}
-
-			// Determine number of bytes to read
-			numBytes := fileInfo.Size()
-			if numBytes > 512 {
-				numBytes = 512
-			}
-
-			head := make([]byte, numBytes) // read the head
-			_, err = file.Read(head)
-			if err != nil {
-				if verbose {
-					fmt.Printf("Error reading file %s: %v\n", path, err)
-					return nil
-				}
-			}
-			// check if there are any nulbytes in the head of the file
-			if bytes.Contains(head, []byte{0}) {
-                if verbose {
-                    fmt.Printf("Skipping binary file %s\n", path)
-                }        
-				return nil
-			}
-			_, err = file.Seek(0, 0) // reset file pointer to the beginning of the file
-			if err != nil {
-                if verbose {
-                    fmt.Printf("Error resetting file pointer for %s: %v\n", path, err)
-                }        
-				return nil
-			}
-		}
+		if !binary && isBinary {
+			if errors {
+				fmt.Printf("Skipping binary file %s\n", path)
+			}        
+			return nil
+		}			
 
 		scanner := bufio.NewScanner(file)
 		scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // set buffer size to 1MB
@@ -200,7 +171,7 @@ func main() {
 			lineNumber++
 		}
 		if err := scanner.Err(); err != nil {
-            if verbose {
+            if errors {
                 fmt.Printf("Error scanning file %s: %v\n", path, err)
             }            
 			return nil
@@ -209,7 +180,7 @@ func main() {
 		return nil
 	})
 	if err != nil {
-        if verbose {
+        if errors {
             fmt.Printf("Error walking directories: %v\n", err)
         }        
 	}
@@ -246,17 +217,37 @@ func replaceNonPrintable(s string) string {
 	return string(b)
 }
 
-func extractMetadata(file *os.File) ([]string, error) {
+func extractFileData(file *os.File) ([]string, bool, error) {
 	var metadata []string
+	isBinary := false
+
+	// Get file size
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return metadata, isBinary, nil
+	}
+
+	// Determine number of bytes to read
+	numBytes := fileInfo.Size()
+	if numBytes > 512 {
+		numBytes = 512
+	}
 
 	// Extract MIME type
-	buf := make([]byte, 512)
-	_, err := file.Read(buf)
+	buf := make([]byte, numBytes)
+	_, err = file.Read(buf)
 	if err != nil {
-		return metadata, err
+		return metadata, isBinary, err
 	}
 	mimeType := http.DetectContentType(buf)
 	metadata = append(metadata, fmt.Sprintf("MIME type: %s", mimeType))
+
+	// Check if MIME type belongs to a group of known binary file types
+	if strings.HasPrefix(mimeType, "application/octet-stream") ||
+		strings.HasPrefix(mimeType, "application/pdf") ||
+		strings.HasPrefix(mimeType, "image/") {
+		isBinary = true
+	}
 
 	file.Seek(0, 0) // reset file pointer to the beginning of the file
 
@@ -264,17 +255,18 @@ func extractMetadata(file *os.File) ([]string, error) {
 	exifData, err := exif.Decode(file)
 	if err != nil {
 		if err == io.EOF {
-			return metadata, fmt.Errorf("EOF reached while reading file")
+			return metadata, isBinary, fmt.Errorf("EOF reached while reading file")
 		}
-		return metadata, err
+		return metadata, isBinary, err
 	}
 	
 	// Convert EXIF metadata to JSON string
 	jsonByte, err := exifData.MarshalJSON()
 	if err != nil {
-		return metadata, err
+		return metadata, isBinary, err
 	}
 	metadata = append(metadata, fmt.Sprintf("EXIF metadata: %s", string(jsonByte)))
 
-	return metadata, nil
+	return metadata, isBinary, nil
 }
+
