@@ -11,7 +11,8 @@ DESCRIPTION
        limited to specific file names or file contents using the -f and -s options, respectively, 
        or to hex-encoded lines using the -h option. The -b option can be used to include binary 
        files in the search. The search starts at the specified ROOT directory, or the current 
-       directory if none is provided.
+       directory if none is provided. If there is a .gitignore file in the directory then only
+       files not ignored by git will be searched. No search criteria will list all files.
 
 OPTIONS
        -f, --file
