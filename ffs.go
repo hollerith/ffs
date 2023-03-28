@@ -1,111 +1,65 @@
 package main
 
+import "net/http"
+import _ "net/http/pprof"
+
 import (
 	"bufio"
 	"fmt"
+	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime/debug"
 	"strconv"
-	"net/http"
 	"strings"
-	"io"
 
 	"github.com/rwcarlsen/goexif/exif"
+	"github.com/spf13/pflag"
 
-	"github.com/spf13/pflag" 
+	"github.com/sabhiram/go-gitignore"
 )
 
 func main() {
-	var filePatternRegex *regexp.Regexp
-	var stringPatternRegex *regexp.Regexp
-    var filePattern string
-    var stringPattern string
-    var hexPattern string
-    var metaPattern string
-	var verbose bool
-	var binary bool
-	var errors bool
-	var root string
-    var fileCount int
-    var matchCount int
-	var err error
+	verbose, binary, errors, debugging, root, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, ignoreParser := parseFlags()
 
-	pflag.StringP("file", "f", "", "regex pattern to match file names")
-	pflag.StringVarP(&stringPattern,"string", "s", "", "regex pattern to match file string")
-	pflag.StringVarP(&hexPattern,"hex", "h", "", "regex pattern to match hex-encoded lines")
-    pflag.StringVarP(&metaPattern,"meta", "m", "", "regex pattern to match file metadata lines")
-	pflag.BoolP("verbose", "v", false, "enable verbose mode")
-	pflag.BoolP("binary", "b", false, "include binary files in search")
-	pflag.BoolP("errors", "e", false, "print errors encountered during execution")
-	pflag.Parse()
-	
-    pflag.Parse()
+	var fileCount int
+	var matchCount int
 
-    rootArgs := pflag.Args()
-    if len(rootArgs) > 0 {
-        root = rootArgs[0]
-    } else {
-        root = "."
-    }
-
-	verbose = pflag.Lookup("verbose").Value.String() == "true"
-	binary = pflag.Lookup("binary").Value.String() == "true"
-	errors = pflag.Lookup("errors").Value.String() == "true"
-
-	if filePattern != "" {
-		filePatternRegex, err = regexp.Compile(filePattern)
+	// Search
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			fmt.Println("Error compiling file pattern regex:", err)
-			os.Exit(1)
-		}
-	}
-	if stringPattern == "" && hexPattern == "" && metaPattern == "" {
-		fmt.Println("Error: string, hex, or meta pattern regex is required")
-		os.Exit(1)
-	}
-
-	stringPatternRegex, err = regexp.Compile(stringPattern)
-	if err != nil {
-		fmt.Println("Error compiling string pattern regex:", err)
-		os.Exit(1)
-	}
-
-	var hexPatternRegex *regexp.Regexp
-	if hexPattern != "" {
-		hexPatternRegex, err = regexp.Compile(hexPattern)
-		if err != nil {
-			fmt.Println("Error compiling hex pattern regex:", err)
-			os.Exit(1)
-		}
-	}
-
-	err = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-            if errors {
-                fmt.Printf("Error processing file %s: %v\n", path, err)
-            }    
+			if errors {
+				fmt.Printf("Error processing file %s: %v\n", path, err)
+			}
 			return nil
+		} else {
+			if debugging {
+				fmt.Printf("%s\n", path)
+			}
 		}
 
 		if info.IsDir() {
 			return nil
 		}
 
+        // Only search files according to .gitignore
+        if ignoreParser != nil && ignoreParser.MatchesPath(path) {
+            return nil
+        }
+
+		// Match file regex pattern
 		if filePatternRegex != nil && !filePatternRegex.MatchString(path) {
 			return nil
 		}
 
-		if verbose {
-			fmt.Println("Matching file:", path)
-			fileCount++
-		}
-
+		// Open the file for reading
 		file, err := os.Open(path)
 		if err != nil {
-            if errors {
-                fmt.Printf("Error opening file %s: %v\n", path, err)
-            }            
+			if errors {
+				fmt.Printf("Error opening file %s: %v\n", path, err)
+			}
 			return nil
 		}
 		defer file.Close()
@@ -119,14 +73,7 @@ func main() {
 		}
 
 		// Check for metadata pattern match
-		if metaPattern != "" {
-			var metaPatternRegex *regexp.Regexp
-			metaPatternRegex, err = regexp.Compile(metaPattern)
-			if err != nil {
-				fmt.Println("Error compiling metadata pattern regex:", err)
-				os.Exit(1)
-			}
-
+		if metaPatternRegex != nil {
 			for _, line := range metaData {
 				if metaPatternRegex.MatchString(line) {
 					matchCount++
@@ -140,71 +87,65 @@ func main() {
 		if !binary && isBinary {
 			if errors {
 				fmt.Printf("Skipping binary file %s\n", path)
-			}        
-			return nil
-		}			
-
-		scanner := bufio.NewScanner(file)
-		scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // set buffer size to 1MB
-		lineNumber := 1
-		for scanner.Scan() {
-			line := scanner.Text()
-			var match bool
-			if hexPatternRegex != nil {
-				// Convert line to hex string and perform match on hex string
-				hex := ""
-				for _, b := range line {
-					hex += " " + strconv.FormatInt(int64(b), 16)
-				}
-				match = hexPatternRegex.MatchString(hex)
-			} else {
-				match = stringPatternRegex.MatchString(line)
 			}
-			if match {
-				matchCount++
-				if verbose {
-					fmt.Printf("%s:%d:%s\n", path, lineNumber, replaceNonPrintable(line))
+			return nil
+		}
+
+		// Scan each line of the file content
+		if stringPatternRegex != nil {
+			file.Seek(0, 0) // reset file pointer to the beginning of the file
+			scanner := bufio.NewScanner(file)
+			scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // set buffer size to 1MB
+			lineNumber := 1
+			for scanner.Scan() {
+				line := scanner.Text()
+				var match bool
+				if hexPatternRegex != nil {
+					// Convert line to hex string and perform match on hex string
+					hex := ""
+					for _, b := range line {
+						hex += " " + strconv.FormatInt(int64(b), 16)
+					}
+					match = hexPatternRegex.MatchString(hex)
 				} else {
-					fmt.Printf("%s\n", path)
-				}           
+					match = stringPatternRegex.MatchString(line)
+				}
+				if match {
+					matchCount++
+					if verbose {
+						fmt.Printf("%s:%d:%s\n", path, lineNumber, replaceNonPrintable(line))
+					} else {
+						fmt.Printf("%s\n", path)
+					}
+				}
+				lineNumber++
 			}
-			lineNumber++
-		}
-		if err := scanner.Err(); err != nil {
-            if errors {
-                fmt.Printf("Error scanning file %s: %v\n", path, err)
-            }            
-			return nil
+			if err := scanner.Err(); err != nil {
+				if errors {
+					fmt.Printf("Error scanning file %s: %v\n", path, err)
+				}
+				return nil
+			}
 		}
 
+		// Print the path of every file scanned
+		if verbose || (stringPatternRegex == nil && hexPatternRegex == nil && metaPatternRegex == nil) {
+			fmt.Println(metaData, path)
+			fileCount++
+		}
 		return nil
 	})
 	if err != nil {
-        if errors {
-            fmt.Printf("Error walking directories: %v\n", err)
-        }        
+		if errors {
+			fmt.Printf("Error walking directories: %v\n", err)
+		}
 	}
 
-    if verbose {
-        fmt.Println("Options chosen:")
-        if filePattern != "" {
-            fmt.Println("- file pattern:", filePattern)
-        }
-        if stringPattern != "" {
-            fmt.Println("- string pattern:", stringPattern)
-        }
-        if hexPattern != "" {
-            fmt.Println("- hex pattern:", hexPattern)
-        }
-        if metaPattern != "" {
-            fmt.Println("- meta pattern:", metaPattern)
-        }
-        fmt.Println("- root directory:", root)
-        fmt.Println("- binary files:", binary)
-        fmt.Println("Number of matches:")
-        fmt.Println("- files:", fileCount)
-        fmt.Println("- matches:", matchCount)
-    }	
+	if verbose || (stringPatternRegex == nil && hexPatternRegex == nil && metaPatternRegex == nil) {
+		fmt.Println("\nNumber of matches:")
+		fmt.Println("- files:", fileCount)
+		fmt.Println("- matches:", matchCount)
+	}
 }
 
 func replaceNonPrintable(s string) string {
@@ -223,7 +164,12 @@ func extractFileData(file *os.File) ([]string, bool, error) {
 
 	// Get file size
 	fileInfo, err := file.Stat()
-	if err != nil {
+	if err == nil {
+		mode := os.FileMode(fileInfo.Mode())
+		size := fileInfo.Size()
+		metadata = append(metadata, fmt.Sprintf("\U0001f512 %s", mode.String()))
+		metadata = append(metadata, fmt.Sprintf("\U0001f4be %12d ", size))
+	} else {
 		return metadata, isBinary, nil
 	}
 
@@ -240,7 +186,7 @@ func extractFileData(file *os.File) ([]string, bool, error) {
 		return metadata, isBinary, err
 	}
 	mimeType := http.DetectContentType(buf)
-	metadata = append(metadata, fmt.Sprintf("MIME type: %s", mimeType))
+	metadata = append(metadata, fmt.Sprintf("\U0001f4c4 %s \t", mimeType))
 
 	// Check if MIME type belongs to a group of known binary file types
 	if strings.HasPrefix(mimeType, "application/octet-stream") ||
@@ -249,9 +195,14 @@ func extractFileData(file *os.File) ([]string, bool, error) {
 		isBinary = true
 	}
 
-	file.Seek(0, 0) // reset file pointer to the beginning of the file
+	// If the file is not an image type return without exifdata
+	if !strings.HasPrefix(mimeType, "image/") {
+		return metadata, isBinary, nil
+	}
 
 	// Extract EXIF metadata
+	file.Seek(0, 0) // reset file pointer to the beginning of the file
+
 	exifData, err := exif.Decode(file)
 	if err != nil {
 		if err == io.EOF {
@@ -259,14 +210,97 @@ func extractFileData(file *os.File) ([]string, bool, error) {
 		}
 		return metadata, isBinary, err
 	}
-	
+
 	// Convert EXIF metadata to JSON string
 	jsonByte, err := exifData.MarshalJSON()
 	if err != nil {
 		return metadata, isBinary, err
 	}
-	metadata = append(metadata, fmt.Sprintf("EXIF metadata: %s", string(jsonByte)))
+	metadata = append(metadata, fmt.Sprintf("\U0001f4f7 %s", string(jsonByte)))
 
 	return metadata, isBinary, nil
 }
 
+func parseFlags() (bool, bool, bool, bool, string, *regexp.Regexp, *regexp.Regexp, *regexp.Regexp, *regexp.Regexp, ignore.IgnoreParser) {
+	var filePattern, stringPattern, hexPattern, metaPattern string
+	var verbose, binary, errors, gitPattern, debugging bool
+	var root string
+	var ignoreParser ignore.IgnoreParser
+
+	pflag.StringVarP(&filePattern, "file", "f", "", "regex pattern to match file names")
+	pflag.StringVarP(&stringPattern, "string", "s", "", "regex pattern to match file string")
+	pflag.StringVarP(&hexPattern, "hex", "h", "", "regex pattern to match hex-encoded lines")
+	pflag.StringVarP(&metaPattern, "meta", "m", "", "regex pattern to match file metadata lines")
+
+	pflag.BoolVarP(&verbose, "verbose", "v", false, "enable verbose mode")
+	pflag.BoolVarP(&binary, "binary", "b", true, "include binary files in search")
+	pflag.BoolVarP(&errors, "errors", "e", false, "print errors encountered during execution")
+	pflag.BoolVarP(&debugging, "debugging", "d", false, "set debugging and trace during execution")
+	pflag.BoolVarP(&gitPattern, "gitignore", "g", false, "search according to .gitignore")
+	pflag.Parse()
+
+	rootArgs := pflag.Args()
+	if len(rootArgs) > 0 {
+		root = rootArgs[0]
+		_, err := os.Stat(root)
+		if os.IsNotExist(err) {
+			fmt.Printf("Error: root directory '%s' does not exist.\n", root)
+			os.Exit(1)
+		}
+	} else {
+		root = "."
+	}
+
+	if debugging {
+		debug.SetGCPercent(25)
+		go func() {
+			log.Println(http.ListenAndServe("localhost:6060", nil))
+		}()
+	}
+
+	var filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex *regexp.Regexp
+	var err error
+
+	if filePattern != "" {
+		filePatternRegex, err = regexp.Compile(filePattern)
+		if err != nil {
+			fmt.Printf("Error compiling file pattern regex: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	if stringPattern != "" {
+		stringPatternRegex, err = regexp.Compile(stringPattern)
+		if err != nil {
+			fmt.Printf("Error compiling string pattern regex: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	if hexPattern != "" {
+		hexPatternRegex, err = regexp.Compile(hexPattern)
+		if err != nil {
+			fmt.Printf("Error compiling hex pattern regex: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	if metaPattern != "" {
+		metaPatternRegex, err = regexp.Compile(metaPattern)
+		if err != nil {
+			fmt.Printf("Error compiling metadata pattern regex: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	if gitPattern {
+		ignoreFilePath := filepath.Join(root, ".gitignore")
+		ignoreParser, err = ignore.CompileIgnoreFile(ignoreFilePath)
+		if err != nil {
+			fmt.Printf("Error parsing .gitignore file: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	return verbose, binary, errors, debugging, root, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, ignoreParser
+}
