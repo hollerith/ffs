@@ -23,6 +23,9 @@ OPTIONS
        -h, --hex
               regex pattern to match hex-encoded lines
 
+       -g, --gitignore
+              skip files and directories ignored by git
+
        -v, --verbose
               enable verbose mode
 
@@ -63,6 +66,10 @@ EXAMPLES
        Search to exclude the node_modules directory from the search:
 
               ffs -f '^(!.*node_modules).*$' -s 'react'
+
+       List all files not ignored by the .gitignore file in tests directory:
+
+              ffs tests -g 
 
 AUTHOR
        Eliot Alderson
