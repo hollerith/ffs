@@ -19,19 +19,25 @@ OPTIONS
               regex pattern to match file names
 
        -s, --string
-              regex pattern to match file string
+              regex pattern to match text in the file
+
+       -m, --meta
+              regex pattern to match file metadata
 
        -h, --hex
               regex pattern to match hex-encoded lines
 
+       -b, --binary
+              include binary files in search
+
        -g, --gitignore
               skip files and directories ignored by git
 
+       -e, --errors
+              print file errors encountered during execution
+
        -v, --verbose
               enable verbose mode
-
-       -b, --binary
-              include binary files in search
 
 EXAMPLES
        Search for all files with the word "example" in their name under the current directory:
