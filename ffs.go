@@ -293,14 +293,20 @@ func parseFlags() (bool, bool, bool, bool, string, *regexp.Regexp, *regexp.Regex
 		}
 	}
 
-	if gitPattern {
-		ignoreFilePath := filepath.Join(root, ".gitignore")
-		ignoreParser, err = ignore.CompileIgnoreFile(ignoreFilePath)
-		if err != nil {
-			fmt.Printf("Error parsing .gitignore file: %v\n", err)
-			os.Exit(1)
-		}
-	}
+    if gitPattern {
+        ignoreFilePath := filepath.Join(root, ".gitignore")
+        if _, err := os.Stat(ignoreFilePath); os.IsNotExist(err) {
+            if verbose {
+                fmt.Printf(".gitignore file not found in %s, ignoring gitPattern flag\n", root)
+            }
+        } else {
+            ignoreParser, err = ignore.CompileIgnoreFile(ignoreFilePath)
+            if err != nil {
+                fmt.Printf("Error parsing .gitignore file: %v\n", err)
+                os.Exit(1)
+            }
+        }
+    }
 
 	return verbose, binary, errors, debugging, root, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, ignoreParser
 }
