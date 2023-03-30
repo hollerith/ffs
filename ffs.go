@@ -10,12 +10,12 @@ import (
 	"log"
 	"os"
 	"os/user"
-	"syscall"
 	"path/filepath"
 	"regexp"
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/rwcarlsen/goexif/exif"
 	"github.com/spf13/pflag"
@@ -26,8 +26,10 @@ import (
 type Metadata struct {
 	Size     int64
 	Mode     string
+	Suid     bool
 	Owner    string
 	Group    string
+	ModTime  string
 	MimeType string
 	ExifData string
 }
@@ -37,13 +39,14 @@ const (
 	modeWidth      = 12
 	ownerWidth     = 12
 	groupWidth     = 12
+	timeWidth      = 19
 	mimeTypeWidth  = 30
 	pathWidth      = 50
 	truncateLength = 3
 )
 
 func main() {
-	verbose, binary, errors, debugging, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, ignoreParser := parseFlags()
+	verbose, binary, errors, debugging, links, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, ignoreParser := parseFlags()
 
 	var lastDir string
 	var fileCount int
@@ -67,17 +70,17 @@ func main() {
 		}
 
 		// Check if file is a directory and if depth is reached
-		if info.IsDir() {
+		if info.IsDir() && links {
 			relPath, err := filepath.Rel(root, path)
 			if err != nil {
 				if errors {
 					fmt.Printf("Error getting relative path for directory %s: %v\n", path, err)
 				}
 				return nil
-			}			
+			}
 			if depth >= 0 && strings.Count(relPath, string(os.PathSeparator)) >= depth && relPath != "." {
 				return filepath.SkipDir
-			}			
+			}
 			return nil
 		}
 
@@ -112,7 +115,7 @@ func main() {
 
 		// Check for metadata pattern match
 		if metaPatternRegex != nil {
-			metadataString := fmt.Sprintf("%d %s %s %s", metaData.Size, metaData.Mode, metaData.MimeType, metaData.ExifData)
+			metadataString := fmt.Sprintf("%d %s %s %s %s %s %s", metaData.Size, metaData.Mode, metaData.Owner, metaData.Group, metaData.ModTime, metaData.MimeType, metaData.ExifData)
 			if metaPatternRegex.MatchString(metadataString) {
 				matchCount++
 			}
@@ -161,7 +164,7 @@ func main() {
 		}
 
 		// Print the path of every file scanned
-		if (matchCount > lastCount) || (stringPatternRegex == nil && hexPatternRegex == nil && metaPatternRegex == nil){
+		if (matchCount > lastCount) || (stringPatternRegex == nil && hexPatternRegex == nil && metaPatternRegex == nil) {
 			if fileCount == 0 || directory != lastDir {
 				lastDir = directory
 				fmt.Printf("\n\033[32m%s\033[0m:\n", lastDir)
@@ -169,13 +172,17 @@ func main() {
 
 			sizeStr := fmt.Sprintf("%*d", sizeWidth, metaData.Size)
 			modeStr := formatColumn(metaData.Mode, modeWidth)
+			if metaData.Suid {
+				modeStr = fmt.Sprintf("\x1b[31m%s\x1b[0m", modeStr)
+			}
 			ownerStr := formatColumn(metaData.Owner, ownerWidth)
 			groupStr := formatColumn(metaData.Group, groupWidth)
+			timeStr := formatColumn(metaData.ModTime, timeWidth)
 			mimeTypeStr := formatColumn(metaData.MimeType, mimeTypeWidth)
 			fileStr := formatColumn(filename, pathWidth)
 
 			if verbose {
-				fmt.Printf("%s %s %s %s %s %s\n", modeStr, ownerStr, groupStr, sizeStr, mimeTypeStr, fileStr)
+				fmt.Printf("%s %s %s %s %s %s %s\n", modeStr, ownerStr, groupStr, sizeStr, timeStr, mimeTypeStr, fileStr)
 			} else {
 				fmt.Printf("%s\n", fileStr)
 			}
@@ -193,8 +200,8 @@ func main() {
 	if verbose || (stringPatternRegex == nil && hexPatternRegex == nil && metaPatternRegex == nil) {
 		fmt.Println("\n- files:", fileCount)
 		fmt.Println("- bytes:", byteCount)
-		
-		if !(stringPatternRegex == nil && hexPatternRegex == nil && metaPatternRegex == nil){
+
+		if !(stringPatternRegex == nil && hexPatternRegex == nil && metaPatternRegex == nil) {
 			fmt.Println("- matches:", matchCount)
 		}
 	}
@@ -229,6 +236,7 @@ func extractFileData(file *os.File) (Metadata, bool, error) {
 	if err == nil {
 		metadata.Size = fileInfo.Size()
 		metadata.Mode = fileInfo.Mode().String()
+		metadata.Suid = (fileInfo.Mode()&os.ModeSetuid) != 0 && (fileInfo.Mode()&os.ModePerm) >= 04000
 
 		// Get owner and group ids
 		uid := fileInfo.Sys().(*syscall.Stat_t).Uid
@@ -248,6 +256,10 @@ func extractFileData(file *os.File) (Metadata, bool, error) {
 		} else {
 			metadata.Group = fmt.Sprintf("%d", gid)
 		}
+
+		// Get file mod time
+		modTime := fileInfo.ModTime().Format("2006-01-02 15:04:05")
+		metadata.ModTime = modTime
 	}
 
 	// Determine number of bytes to read
@@ -297,9 +309,9 @@ func extractFileData(file *os.File) (Metadata, bool, error) {
 	return metadata, isBinary, nil
 }
 
-func parseFlags() (bool, bool, bool, bool, string, int, *regexp.Regexp, *regexp.Regexp, *regexp.Regexp, *regexp.Regexp, ignore.IgnoreParser) {
+func parseFlags() (bool, bool, bool, bool, bool, string, int, *regexp.Regexp, *regexp.Regexp, *regexp.Regexp, *regexp.Regexp, ignore.IgnoreParser) {
 	var filePattern, stringPattern, hexPattern, metaPattern string
-	var verbose, binary, errors, gitPattern, debugging bool
+	var verbose, binary, errors, gitPattern, debugging, links bool
 	var root string
 	var depth int
 	var ignoreParser ignore.IgnoreParser
@@ -313,6 +325,7 @@ func parseFlags() (bool, bool, bool, bool, string, int, *regexp.Regexp, *regexp.
 	pflag.BoolVarP(&binary, "binary", "b", true, "include binary files in search")
 	pflag.BoolVarP(&errors, "errors", "e", false, "print errors encountered during execution")
 	pflag.BoolVarP(&debugging, "debugging", "t", false, "set debugging and trace during execution")
+	pflag.BoolVarP(&links, "links", "l", true, "follow symbolic links to directories")
 	pflag.BoolVarP(&gitPattern, "gitignore", "g", false, "search according to .gitignore")
 
 	pflag.IntVarP(&depth, "depth", "d", -1, "depth to recurse, -1 for infinite depth")
@@ -389,5 +402,5 @@ func parseFlags() (bool, bool, bool, bool, string, int, *regexp.Regexp, *regexp.
 		}
 	}
 
-	return verbose, binary, errors, debugging, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, ignoreParser
+	return verbose, binary, errors, debugging, links, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, ignoreParser
 }
