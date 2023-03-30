@@ -9,6 +9,8 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/user"
+	"syscall"
 	"path/filepath"
 	"regexp"
 	"runtime/debug"
@@ -21,14 +23,38 @@ import (
 	"github.com/sabhiram/go-gitignore"
 )
 
-func main() {
-	verbose, binary, errors, debugging, root, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, ignoreParser := parseFlags()
+type Metadata struct {
+	Size     int64
+	Mode     string
+	Owner    string
+	Group    string
+	MimeType string
+	ExifData string
+}
 
+const (
+	sizeWidth      = 10
+	modeWidth      = 12
+	ownerWidth     = 12
+	groupWidth     = 12
+	mimeTypeWidth  = 30
+	pathWidth      = 50
+	truncateLength = 3
+)
+
+func main() {
+	verbose, binary, errors, debugging, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, ignoreParser := parseFlags()
+
+	var lastDir string
 	var fileCount int
 	var matchCount int
+	var byteCount int64
 
 	// Search
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		var lastCount = matchCount
+		directory, filename := filepath.Split(path)
+
 		if err != nil {
 			if errors {
 				fmt.Printf("Error processing file %s: %v\n", path, err)
@@ -40,17 +66,28 @@ func main() {
 			}
 		}
 
+		// Check if file is a directory and if depth is reached
 		if info.IsDir() {
+			relPath, err := filepath.Rel(root, path)
+			if err != nil {
+				if errors {
+					fmt.Printf("Error getting relative path for directory %s: %v\n", path, err)
+				}
+				return nil
+			}			
+			if depth >= 0 && strings.Count(relPath, string(os.PathSeparator)) >= depth && relPath != "." {
+				return filepath.SkipDir
+			}			
 			return nil
 		}
 
-        // Only search files according to .gitignore
-        if ignoreParser != nil && ignoreParser.MatchesPath(path) {
-            return nil
-        }
+		// Only search files according to .gitignore
+		if ignoreParser != nil && ignoreParser.MatchesPath(path) {
+			return nil
+		}
 
-		// Match file regex pattern
-		if filePatternRegex != nil && !filePatternRegex.MatchString(path) {
+		// Match filename regex pattern, optional TODO add a flag to match whole path
+		if filePatternRegex != nil && !filePatternRegex.MatchString(filename) {
 			return nil
 		}
 
@@ -70,24 +107,21 @@ func main() {
 			if errors {
 				fmt.Printf("Error extracting information from the file %s: %v\n", path, err)
 			}
+			return nil
 		}
 
 		// Check for metadata pattern match
 		if metaPatternRegex != nil {
-			for _, line := range metaData {
-				if metaPatternRegex.MatchString(line) {
-					matchCount++
-					fmt.Printf("%s:%s\n", path, line)
-					break
-				}
+			metadataString := fmt.Sprintf("%d %s %s %s", metaData.Size, metaData.Mode, metaData.MimeType, metaData.ExifData)
+			if metaPatternRegex.MatchString(metadataString) {
+				matchCount++
 			}
 		}
 
+		byteCount += metaData.Size
+
 		// Check if file is binary and skip if not set to include binary files
 		if !binary && isBinary {
-			if errors {
-				fmt.Printf("Skipping binary file %s\n", path)
-			}
 			return nil
 		}
 
@@ -114,8 +148,6 @@ func main() {
 					matchCount++
 					if verbose {
 						fmt.Printf("%s:%d:%s\n", path, lineNumber, replaceNonPrintable(line))
-					} else {
-						fmt.Printf("%s\n", path)
 					}
 				}
 				lineNumber++
@@ -129,10 +161,27 @@ func main() {
 		}
 
 		// Print the path of every file scanned
-		if verbose || (stringPatternRegex == nil && hexPatternRegex == nil && metaPatternRegex == nil) {
-			fmt.Println(metaData, path)
+		if (matchCount > lastCount) || (stringPatternRegex == nil && hexPatternRegex == nil && metaPatternRegex == nil){
+			if fileCount == 0 || directory != lastDir {
+				lastDir = directory
+				fmt.Printf("\n\033[32m%s\033[0m:\n", lastDir)
+			}
+
+			sizeStr := fmt.Sprintf("%*d", sizeWidth, metaData.Size)
+			modeStr := formatColumn(metaData.Mode, modeWidth)
+			ownerStr := formatColumn(metaData.Owner, ownerWidth)
+			groupStr := formatColumn(metaData.Group, groupWidth)
+			mimeTypeStr := formatColumn(metaData.MimeType, mimeTypeWidth)
+			fileStr := formatColumn(filename, pathWidth)
+
+			if verbose {
+				fmt.Printf("%s %s %s %s %s %s\n", modeStr, ownerStr, groupStr, sizeStr, mimeTypeStr, fileStr)
+			} else {
+				fmt.Printf("%s\n", fileStr)
+			}
 			fileCount++
 		}
+
 		return nil
 	})
 	if err != nil {
@@ -142,9 +191,12 @@ func main() {
 	}
 
 	if verbose || (stringPatternRegex == nil && hexPatternRegex == nil && metaPatternRegex == nil) {
-		fmt.Println("\nNumber of matches:")
-		fmt.Println("- files:", fileCount)
-		fmt.Println("- matches:", matchCount)
+		fmt.Println("\n- files:", fileCount)
+		fmt.Println("- bytes:", byteCount)
+		
+		if !(stringPatternRegex == nil && hexPatternRegex == nil && metaPatternRegex == nil){
+			fmt.Println("- matches:", matchCount)
+		}
 	}
 }
 
@@ -158,19 +210,44 @@ func replaceNonPrintable(s string) string {
 	return string(b)
 }
 
-func extractFileData(file *os.File) ([]string, bool, error) {
-	var metadata []string
+// Truncate or pad string to fit within width with ellipsis
+func formatColumn(s string, width int) string {
+	if len(s) <= width {
+		return s + strings.Repeat(" ", width-len(s))
+	} else {
+		return s[:width-3] + "..."
+	}
+}
+
+// extract file details
+func extractFileData(file *os.File) (Metadata, bool, error) {
+	var metadata Metadata
 	isBinary := false
 
-	// Get file size
+	// Get file size, mode, owner, and group
 	fileInfo, err := file.Stat()
 	if err == nil {
-		mode := os.FileMode(fileInfo.Mode())
-		size := fileInfo.Size()
-		metadata = append(metadata, fmt.Sprintf("\U0001f512 %s", mode.String()))
-		metadata = append(metadata, fmt.Sprintf("\U0001f4be %12d ", size))
-	} else {
-		return metadata, isBinary, nil
+		metadata.Size = fileInfo.Size()
+		metadata.Mode = fileInfo.Mode().String()
+
+		// Get owner and group ids
+		uid := fileInfo.Sys().(*syscall.Stat_t).Uid
+		gid := fileInfo.Sys().(*syscall.Stat_t).Gid
+
+		// Get owner and group names
+		u, err := user.LookupId(fmt.Sprintf("%d", uid))
+		if err == nil {
+			metadata.Owner = fmt.Sprintf("%d - %s", uid, u.Username)
+		} else {
+			metadata.Owner = fmt.Sprintf("%d", uid)
+		}
+
+		g, err := user.LookupGroupId(fmt.Sprintf("%d", gid))
+		if err == nil {
+			metadata.Group = fmt.Sprintf("%d - %s", gid, g.Name)
+		} else {
+			metadata.Group = fmt.Sprintf("%d", gid)
+		}
 	}
 
 	// Determine number of bytes to read
@@ -185,18 +262,17 @@ func extractFileData(file *os.File) ([]string, bool, error) {
 	if err != nil {
 		return metadata, isBinary, err
 	}
-	mimeType := http.DetectContentType(buf)
-	metadata = append(metadata, fmt.Sprintf("\U0001f4c4 %s \t", mimeType))
+	metadata.MimeType = http.DetectContentType(buf)
 
 	// Check if MIME type belongs to a group of known binary file types
-	if strings.HasPrefix(mimeType, "application/octet-stream") ||
-		strings.HasPrefix(mimeType, "application/pdf") ||
-		strings.HasPrefix(mimeType, "image/") {
+	if strings.HasPrefix(metadata.MimeType, "application/octet-stream") ||
+		strings.HasPrefix(metadata.MimeType, "application/pdf") ||
+		strings.HasPrefix(metadata.MimeType, "image/") {
 		isBinary = true
 	}
 
 	// If the file is not an image type return without exifdata
-	if !strings.HasPrefix(mimeType, "image/") {
+	if !strings.HasPrefix(metadata.MimeType, "image/") {
 		return metadata, isBinary, nil
 	}
 
@@ -216,15 +292,16 @@ func extractFileData(file *os.File) ([]string, bool, error) {
 	if err != nil {
 		return metadata, isBinary, err
 	}
-	metadata = append(metadata, fmt.Sprintf("\U0001f4f7 %s", string(jsonByte)))
+	metadata.ExifData = string(jsonByte)
 
 	return metadata, isBinary, nil
 }
 
-func parseFlags() (bool, bool, bool, bool, string, *regexp.Regexp, *regexp.Regexp, *regexp.Regexp, *regexp.Regexp, ignore.IgnoreParser) {
+func parseFlags() (bool, bool, bool, bool, string, int, *regexp.Regexp, *regexp.Regexp, *regexp.Regexp, *regexp.Regexp, ignore.IgnoreParser) {
 	var filePattern, stringPattern, hexPattern, metaPattern string
 	var verbose, binary, errors, gitPattern, debugging bool
 	var root string
+	var depth int
 	var ignoreParser ignore.IgnoreParser
 
 	pflag.StringVarP(&filePattern, "file", "f", "", "regex pattern to match file names")
@@ -235,13 +312,17 @@ func parseFlags() (bool, bool, bool, bool, string, *regexp.Regexp, *regexp.Regex
 	pflag.BoolVarP(&verbose, "verbose", "v", false, "enable verbose mode")
 	pflag.BoolVarP(&binary, "binary", "b", true, "include binary files in search")
 	pflag.BoolVarP(&errors, "errors", "e", false, "print errors encountered during execution")
-	pflag.BoolVarP(&debugging, "debugging", "d", false, "set debugging and trace during execution")
+	pflag.BoolVarP(&debugging, "debugging", "t", false, "set debugging and trace during execution")
 	pflag.BoolVarP(&gitPattern, "gitignore", "g", false, "search according to .gitignore")
+
+	pflag.IntVarP(&depth, "depth", "d", -1, "depth to recurse, -1 for infinite depth")
+
 	pflag.Parse()
 
 	rootArgs := pflag.Args()
 	if len(rootArgs) > 0 {
-		root = rootArgs[0]
+		homedir, _ := os.UserHomeDir()
+		root = strings.Replace(rootArgs[0], "~", homedir, 1)
 		_, err := os.Stat(root)
 		if os.IsNotExist(err) {
 			fmt.Printf("Error: root directory '%s' does not exist.\n", root)
@@ -293,20 +374,20 @@ func parseFlags() (bool, bool, bool, bool, string, *regexp.Regexp, *regexp.Regex
 		}
 	}
 
-    if gitPattern {
-        ignoreFilePath := filepath.Join(root, ".gitignore")
-        if _, err := os.Stat(ignoreFilePath); os.IsNotExist(err) {
-            if verbose {
-                fmt.Printf(".gitignore file not found in %s, ignoring gitPattern flag\n", root)
-            }
-        } else {
-            ignoreParser, err = ignore.CompileIgnoreFile(ignoreFilePath)
-            if err != nil {
-                fmt.Printf("Error parsing .gitignore file: %v\n", err)
-                os.Exit(1)
-            }
-        }
-    }
+	if gitPattern {
+		ignoreFilePath := filepath.Join(root, ".gitignore")
+		if _, err := os.Stat(ignoreFilePath); os.IsNotExist(err) {
+			if errors {
+				fmt.Printf(".gitignore file not found in %s, ignoring gitPattern flag\n", root)
+			}
+		} else {
+			ignoreParser, err = ignore.CompileIgnoreFile(ignoreFilePath)
+			if err != nil {
+				fmt.Printf("Error parsing .gitignore file: %v\n", err)
+				os.Exit(1)
+			}
+		}
+	}
 
-	return verbose, binary, errors, debugging, root, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, ignoreParser
+	return verbose, binary, errors, debugging, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, ignoreParser
 }
