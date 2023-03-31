@@ -54,9 +54,8 @@ func main() {
 	var byteCount int64
 
 	// Search
-	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	err := Walk(root, links, func(path string, info os.FileInfo, err error) error {
 		var lastCount = matchCount
-		directory, filename := filepath.Split(path)
 
 		if err != nil {
 			if errors {
@@ -70,7 +69,7 @@ func main() {
 		}
 
 		// Check if file is a directory and if depth is reached
-		if info.IsDir() && links {
+		if info.IsDir() {
 			relPath, err := filepath.Rel(root, path)
 			if err != nil {
 				if errors {
@@ -83,6 +82,8 @@ func main() {
 			}
 			return nil
 		}
+
+		directory, filename := filepath.Split(path)
 
 		// Only search files according to .gitignore
 		if ignoreParser != nil && ignoreParser.MatchesPath(path) {
@@ -403,4 +404,55 @@ func parseFlags() (bool, bool, bool, bool, bool, string, int, *regexp.Regexp, *r
 	}
 
 	return verbose, binary, errors, debugging, links, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, ignoreParser
+}
+
+func walk(filename string, linkDirname string, followLinks bool, walkFn filepath.WalkFunc) error {
+    visited := make(map[string]bool) // keep track of visited directories
+
+    symWalkFunc := func(path string, info os.FileInfo, err error) error {
+        if fname, err := filepath.Rel(filename, path); err == nil {
+            path = filepath.Join(linkDirname, fname)
+        } else {
+            return err
+        }
+
+        if visited[path] {
+            // already visited this directory, skip it
+            return nil
+        }
+
+        visited[path] = true
+
+        if err == nil && info.Mode()&os.ModeSymlink == os.ModeSymlink && followLinks {
+            finalPath, err := filepath.EvalSymlinks(path)
+            if err != nil {
+                return err
+            }
+
+			if visited[finalPath] {
+				// already visited this directory, skip it
+				return nil
+			}
+
+			visited[finalPath] = true
+
+            finalInfo, err := os.Lstat(finalPath)
+            if err != nil {
+                return walkFn(path, info, err)
+            }
+
+            if finalInfo.IsDir() {
+                return walk(finalPath, path, followLinks, walkFn)
+            }
+        }
+
+        return walkFn(path, info, err)
+    }
+
+    return filepath.Walk(filename, symWalkFunc)
+}
+
+// Walk extends filepath.Walk to also follow symlinks
+func Walk(path string, followLinks bool, walkFn filepath.WalkFunc) error {
+	return walk(path, path, followLinks, walkFn)
 }
