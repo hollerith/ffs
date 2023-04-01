@@ -33,6 +33,7 @@ type Metadata struct {
 	ModTime  string
 	MimeType string
 	ExifData string
+	Error    string
 }
 
 const (
@@ -110,10 +111,7 @@ func main() {
 		// Extract metadata and other file information
 		metaData, isBinary, err := extractFileData(file)
 		if err != nil {
-			if errors {
-				fmt.Printf("Error extracting information from the file %s: %v\n", path, err)
-			}
-			return nil
+			metaData.Error = fmt.Sprintf("Error: %v", err)
 		}
 
 		// Check for metadata pattern match
@@ -142,13 +140,10 @@ func main() {
 				}
 			}
 			metaData.Link = linkPath
-		} else {
-			// Exclude symlinks from byteCount
-			byteCount += metaData.Size
 		}
 
-		// Check if file is binary and skip if not set to include binary files
-		if !binary && isBinary {
+		// Check if file is binary and skip if set to exclude binary files
+		if binary && isBinary {
 			return nil
 		}
 
@@ -190,6 +185,7 @@ func main() {
 		// Print results
 		if (matchCount > lastCount) || (stringPatternRegex == nil && hexPatternRegex == nil && metaPatternRegex == nil) {
 
+
 			// Print directory
 			if fileCount == 0 || directory != lastDir {
 				lastDir = directory
@@ -218,7 +214,7 @@ func main() {
 			groupStr := formatColumn(metaData.Group, groupWidth)
 			timeStr := formatColumn(metaData.ModTime, timeWidth)
 			mimeTypeStr := formatColumn(metaData.MimeType, mimeTypeWidth)
-			fileStr := formatColumn(filename, pathWidth)
+			fileStr := filename 
 			if metaData.Link != "" {
 				// file is a link, color it light yellow
 				fileStr = fmt.Sprintf("\x1b[38;5;221m%s\x1b[0m --> %s", filename, metaData.Link)
@@ -233,10 +229,18 @@ func main() {
 					// file is owner executable, color it light pink
 					fileStr = fmt.Sprintf("\x1b[38;5;219m%s\x1b[0m", filename)
 				}
-			}				
+
+				// Exclude symlinks from byteCount
+				byteCount += metaData.Size
+			}	
 			
+			var errorStr string
+			if (errors) {
+				errorStr = fmt.Sprintf("\033[90m - %s\033[0m", metaData.Error)
+			}
+
 			if verbose {
-				fmt.Printf("%s %s %s %s %s %s %s\n", modeStr, ownerStr, groupStr, sizeStr, timeStr, mimeTypeStr, fileStr)
+				fmt.Printf("%s %s %s %s %s %s %s %s\n", modeStr, ownerStr, groupStr, sizeStr, timeStr, mimeTypeStr, fileStr, errorStr)
 			} else {
 				fmt.Printf("%s\n", fileStr)
 			}
@@ -332,9 +336,7 @@ func extractFileData(file *os.File) (Metadata, bool, error) {
 	metadata.MimeType = http.DetectContentType(buf)
 
 	// Check if MIME type belongs to a group of known binary file types
-	if strings.HasPrefix(metadata.MimeType, "application/octet-stream") ||
-		strings.HasPrefix(metadata.MimeType, "application/pdf") ||
-		strings.HasPrefix(metadata.MimeType, "image/") {
+	if !strings.HasPrefix(metadata.MimeType, "text/") {
 		isBinary = true
 	}
 
@@ -373,11 +375,11 @@ func parseFlags() (bool, bool, bool, bool, bool, string, int, *regexp.Regexp, *r
 
 	pflag.StringVarP(&filePattern, "file", "f", "", "regex pattern to match file names")
 	pflag.StringVarP(&stringPattern, "string", "s", "", "regex pattern to match file string")
-	pflag.StringVarP(&hexPattern, "hex", "h", "", "regex pattern to match hex-encoded lines")
+	pflag.StringVarP(&hexPattern, "hex", "x", "", "regex pattern to match hex-encoded lines")
 	pflag.StringVarP(&metaPattern, "meta", "m", "", "regex pattern to match file metadata lines")
 
 	pflag.BoolVarP(&verbose, "verbose", "v", false, "enable verbose mode")
-	pflag.BoolVarP(&binary, "binary", "b", true, "include binary files in search")
+	pflag.BoolVarP(&binary, "binary", "b", false, "exclude binary files in search")
 	pflag.BoolVarP(&errors, "errors", "e", false, "print errors encountered during execution")
 	pflag.BoolVarP(&debugging, "debugging", "t", false, "set debugging and trace during execution")
 	pflag.BoolVarP(&links, "links", "l", false, "follow symbolic links to directories")
@@ -393,7 +395,7 @@ func parseFlags() (bool, bool, bool, bool, bool, string, int, *regexp.Regexp, *r
 		root = strings.Replace(rootArgs[0], "~", homedir, 1)
 		_, err := os.Stat(root)
 		if os.IsNotExist(err) {
-			fmt.Printf("Error: root directory '%s' does not exist.\n", root)
+			fmt.Printf("Error: directory '%s' does not exist.\n", root)
 			os.Exit(1)
 		}
 	} else {
@@ -411,12 +413,16 @@ func parseFlags() (bool, bool, bool, bool, bool, string, int, *regexp.Regexp, *r
 	var err error
 
 	if filePattern != "" {
-		filePatternRegex, err = regexp.Compile(filePattern)
+		// assume someone (i.e. me) has typed a globbing pattern instead of regex and convert
+		if strings.HasPrefix(filePattern, "*.") {
+			filePattern = ".*\\." + filePattern[2:] + "$"
+		}
+		filePatternRegex, err = regexp.Compile(filePattern + "$")
 		if err != nil {
 			fmt.Printf("Error compiling file pattern regex: %v\n", err)
 			os.Exit(1)
 		}
-	}
+	}	
 
 	if stringPattern != "" {
 		stringPatternRegex, err = regexp.Compile(stringPattern)
@@ -446,7 +452,7 @@ func parseFlags() (bool, bool, bool, bool, bool, string, int, *regexp.Regexp, *r
 		ignoreFilePath := filepath.Join(root, ".gitignore")
 		if _, err := os.Stat(ignoreFilePath); os.IsNotExist(err) {
 			if errors {
-				fmt.Printf(".gitignore file not found in %s, ignoring gitPattern flag\n", root)
+				fmt.Printf("No .gitignore file in %s\n", root)
 			}
 		} else {
 			ignoreParser, err = ignore.CompileIgnoreFile(ignoreFilePath)
