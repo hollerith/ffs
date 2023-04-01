@@ -9,12 +9,14 @@ SYNOPSIS
 DESCRIPTION
        ffs searches for regex patterns in files and prints the matching lines. The search can be 
        limited to specific file names or file contents using the -f and -s options, respectively, 
-       or to hex-encoded lines using the -h option. The -b option can be used to exclude binary 
+       or to hex-encoded lines using the -x option. The -b option can be used to exclude binary 
        files from the search. The search starts at the specified ROOT directory, or the current 
        directory if none is provided. If there is a .gitignore file in the directory then only
-       files not ignored by git will be searched. No search criteria will list all files. File
-       search patterns which look like common glob are converted to the equivalent regex. The
-       program can follow symlinks and recursion can be limited to a number of depths.
+       files not ignored by git will be searched. No search criteria will list all files. The
+       program can follow symlinks and recursion can be limited to a number of depths. File
+       search patterns which look like common glob are converted to the equivalent regex. If
+       the ROOT argument contains such a pattern then it acts a shorthand for a start directory
+       and file match.
 
 OPTIONS
        -f, --file=regex_pattern
@@ -90,6 +92,9 @@ EXAMPLES
 
        List all files under git version control in tests directory:
               ffs tests -g 
+       
+       Use shorthand globbing pattern to specify start directory and file pattern:
+              ffs ~/Downloads/*.iso
 
 AUTHOR
        Eliot Alderson

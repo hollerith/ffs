@@ -87,6 +87,9 @@ func main() {
 
 		directory, filename := filepath.Split(path)
 		directory = strings.TrimSuffix(directory, string(os.PathSeparator))
+		if directory == "" {
+			directory = root
+		}
 
 		// Only search files according to .gitignore
 		if ignoreParser != nil && ignoreParser.MatchesPath(path) {
@@ -111,7 +114,7 @@ func main() {
 		// Extract metadata and other file information
 		metaData, isBinary, err := extractFileData(file)
 		if err != nil {
-			metaData.Error = fmt.Sprintf("Error: %v", err)
+			metaData.Error = fmt.Sprintf("Warn: %v", err)
 		}
 
 		// Check for metadata pattern match
@@ -185,7 +188,6 @@ func main() {
 		// Print results
 		if (matchCount > lastCount) || (stringPatternRegex == nil && hexPatternRegex == nil && metaPatternRegex == nil) {
 
-
 			// Print directory
 			if fileCount == 0 || directory != lastDir {
 				lastDir = directory
@@ -218,18 +220,19 @@ func main() {
 			if metaData.Link != "" {
 				// file is a link, color it light yellow
 				fileStr = fmt.Sprintf("\x1b[38;5;221m%s\x1b[0m --> %s", filename, metaData.Link)
-			} else if fi.Mode().Perm()&0111 != 0 {
-				if fi.Mode().Perm()&0007 != 0 {
-					// file is world executable, color it dark red
-					fileStr = fmt.Sprintf("\x1b[38;5;124m%s\x1b[0m", filename)
-				} else if fi.Mode().Perm()&0070 != 0 {
-					// file is group executable, color it light red
-					fileStr = fmt.Sprintf("\x1b[38;5;211m%s\x1b[0m", filename)
-				} else {
-					// file is owner executable, color it light pink
-					fileStr = fmt.Sprintf("\x1b[38;5;219m%s\x1b[0m", filename)
+			} else {
+				if fi.Mode().Perm()&0111 != 0 {
+					if fi.Mode().Perm()&0007 != 0 {
+						// file is world executable, color it dark red
+						fileStr = fmt.Sprintf("\x1b[38;5;124m%s\x1b[0m", filename)
+					} else if fi.Mode().Perm()&0070 != 0 {
+						// file is group executable, color it light red
+						fileStr = fmt.Sprintf("\x1b[38;5;211m%s\x1b[0m", filename)
+					} else {
+						// file is owner executable, color it light pink
+						fileStr = fmt.Sprintf("\x1b[38;5;219m%s\x1b[0m", filename)
+					}
 				}
-
 				// Exclude symlinks from byteCount
 				byteCount += metaData.Size
 			}	
@@ -393,10 +396,15 @@ func parseFlags() (bool, bool, bool, bool, bool, string, int, *regexp.Regexp, *r
 	if len(rootArgs) > 0 {
 		homedir, _ := os.UserHomeDir()
 		root = strings.Replace(rootArgs[0], "~", homedir, 1)
-		_, err := os.Stat(root)
-		if os.IsNotExist(err) {
-			fmt.Printf("Error: directory '%s' does not exist.\n", root)
-			os.Exit(1)
+		// assume there is a lazy wildcard globbing shorthand in the first argument
+		if strings.Contains(root, "*") && filePattern == "" {
+			root, filePattern = filepath.Split(root)
+		} else {
+			_, err := os.Stat(root)
+			if os.IsNotExist(err) {
+				fmt.Printf("Error: directory '%s' does not exist.\n", root)
+				os.Exit(1)
+			}
 		}
 	} else {
 		root = "."
@@ -414,9 +422,13 @@ func parseFlags() (bool, bool, bool, bool, bool, string, int, *regexp.Regexp, *r
 
 	if filePattern != "" {
 		// assume someone (i.e. me) has typed a globbing pattern instead of regex and convert
+		if filePattern == "*.*" {
+			filePattern = ".*\\..*$"
+		}
 		if strings.HasPrefix(filePattern, "*.") {
 			filePattern = ".*\\." + filePattern[2:] + "$"
 		}
+
 		filePatternRegex, err = regexp.Compile(filePattern + "$")
 		if err != nil {
 			fmt.Printf("Error compiling file pattern regex: %v\n", err)
