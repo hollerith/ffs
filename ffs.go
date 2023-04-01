@@ -27,6 +27,7 @@ type Metadata struct {
 	Size     int64
 	Mode     string
 	Suid     bool
+	Link     string
 	Owner    string
 	Group    string
 	ModTime  string
@@ -84,6 +85,7 @@ func main() {
 		}
 
 		directory, filename := filepath.Split(path)
+		directory = strings.TrimSuffix(directory, string(os.PathSeparator))
 
 		// Only search files according to .gitignore
 		if ignoreParser != nil && ignoreParser.MatchesPath(path) {
@@ -122,7 +124,28 @@ func main() {
 			}
 		}
 
-		byteCount += metaData.Size
+		fi, err := os.Lstat(path)
+		if err != nil {
+			if errors {
+				log.Printf("Error Lstat-ing %s: %v\n", path, err)
+				return nil
+			}
+		}
+	
+		// Add link pointer to metaData
+		if (fi.Mode()&os.ModeSymlink == os.ModeSymlink) {
+			linkPath, err := filepath.EvalSymlinks(path)
+			if err != nil {
+				if errors {
+					log.Printf("Error eval-ing %s: %v\n", path, err)
+					return nil
+				}
+			}
+			metaData.Link = linkPath
+		} else {
+			// Exclude symlinks from byteCount
+			byteCount += metaData.Size
+		}
 
 		// Check if file is binary and skip if not set to include binary files
 		if !binary && isBinary {
@@ -164,13 +187,28 @@ func main() {
 			}
 		}
 
-		// Print the path of every file scanned
+		// Print results
 		if (matchCount > lastCount) || (stringPatternRegex == nil && hexPatternRegex == nil && metaPatternRegex == nil) {
+
+			// Print directory
 			if fileCount == 0 || directory != lastDir {
 				lastDir = directory
-				fmt.Printf("\n\033[32m%s\033[0m:\n", lastDir)
+				// Check if the directory is a symlink
+				dirInfo, err := os.Lstat(lastDir)
+				if err == nil && dirInfo.Mode()&os.ModeSymlink == os.ModeSymlink {
+					// directory is a symlink, print final path in light yellow with arrow pointing to actual path in regular green
+					finalPath, err := filepath.EvalSymlinks(lastDir)
+					if err != nil {
+						fmt.Printf("\n\033[38;5;221m%s\033[0m (could not resolve symlink):\n", lastDir)
+					} else {
+						fmt.Printf("\n\033[38;5;221m%s\033[0m --> \033[32m%s\033[0m:\n", lastDir, finalPath)
+					}
+				} else {
+					fmt.Printf("\n\033[32m%s\033[0m:\n", lastDir)
+				}
 			}
 
+			// Print the current file details
 			sizeStr := fmt.Sprintf("%*d", sizeWidth, metaData.Size)
 			modeStr := formatColumn(metaData.Mode, modeWidth)
 			if metaData.Suid {
@@ -181,7 +219,22 @@ func main() {
 			timeStr := formatColumn(metaData.ModTime, timeWidth)
 			mimeTypeStr := formatColumn(metaData.MimeType, mimeTypeWidth)
 			fileStr := formatColumn(filename, pathWidth)
-
+			if metaData.Link != "" {
+				// file is a link, color it light yellow
+				fileStr = fmt.Sprintf("\x1b[38;5;221m%s\x1b[0m --> %s", filename, metaData.Link)
+			} else if fi.Mode().Perm()&0111 != 0 {
+				if fi.Mode().Perm()&0007 != 0 {
+					// file is world executable, color it dark red
+					fileStr = fmt.Sprintf("\x1b[38;5;124m%s\x1b[0m", filename)
+				} else if fi.Mode().Perm()&0070 != 0 {
+					// file is group executable, color it light red
+					fileStr = fmt.Sprintf("\x1b[38;5;211m%s\x1b[0m", filename)
+				} else {
+					// file is owner executable, color it light pink
+					fileStr = fmt.Sprintf("\x1b[38;5;219m%s\x1b[0m", filename)
+				}
+			}				
+			
 			if verbose {
 				fmt.Printf("%s %s %s %s %s %s %s\n", modeStr, ownerStr, groupStr, sizeStr, timeStr, mimeTypeStr, fileStr)
 			} else {
@@ -199,13 +252,14 @@ func main() {
 	}
 
 	if verbose || (stringPatternRegex == nil && hexPatternRegex == nil && metaPatternRegex == nil) {
-		fmt.Println("\n- files:", fileCount)
-		fmt.Println("- bytes:", byteCount)
-
+		fmt.Println("\n\x1b[36m- files:\x1b[0m", fileCount)
+		fmt.Printf("\x1b[36m- bytes:\x1b[0m %d (\x1b[33m%s\x1b[0m)\n", byteCount, humanizeBytes(byteCount))
+	
 		if !(stringPatternRegex == nil && hexPatternRegex == nil && metaPatternRegex == nil) {
-			fmt.Println("- matches:", matchCount)
+			fmt.Println("\x1b[36m- matches:\x1b[0m", matchCount)
 		}
-	}
+		fmt.Printf("\n")
+	}	
 }
 
 func replaceNonPrintable(s string) string {
@@ -326,7 +380,7 @@ func parseFlags() (bool, bool, bool, bool, bool, string, int, *regexp.Regexp, *r
 	pflag.BoolVarP(&binary, "binary", "b", true, "include binary files in search")
 	pflag.BoolVarP(&errors, "errors", "e", false, "print errors encountered during execution")
 	pflag.BoolVarP(&debugging, "debugging", "t", false, "set debugging and trace during execution")
-	pflag.BoolVarP(&links, "links", "l", true, "follow symbolic links to directories")
+	pflag.BoolVarP(&links, "links", "l", false, "follow symbolic links to directories")
 	pflag.BoolVarP(&gitPattern, "gitignore", "g", false, "search according to .gitignore")
 
 	pflag.IntVarP(&depth, "depth", "d", -1, "depth to recurse, -1 for infinite depth")
@@ -406,9 +460,20 @@ func parseFlags() (bool, bool, bool, bool, bool, string, int, *regexp.Regexp, *r
 	return verbose, binary, errors, debugging, links, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, ignoreParser
 }
 
-func walk(filename string, linkDirname string, followLinks bool, walkFn filepath.WalkFunc) error {
-    visited := make(map[string]bool) // keep track of visited directories
+func humanizeBytes(bytes int64) string {
+    const unit = 1024
+    if bytes < unit {
+        return fmt.Sprintf("%d B", bytes)
+    }
+    div, exp := int64(unit), 0
+    for n := bytes / unit; n >= unit; n /= unit {
+        div *= unit
+        exp++
+    }
+    return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
 
+func walk(filename string, linkDirname string, followLinks bool, visited map[string]bool, walkFn filepath.WalkFunc) error {
     symWalkFunc := func(path string, info os.FileInfo, err error) error {
         if fname, err := filepath.Rel(filename, path); err == nil {
             path = filepath.Join(linkDirname, fname)
@@ -416,25 +481,20 @@ func walk(filename string, linkDirname string, followLinks bool, walkFn filepath
             return err
         }
 
-        if visited[path] {
-            // already visited this directory, skip it
-            return nil
-        }
-
-        visited[path] = true
-
         if err == nil && info.Mode()&os.ModeSymlink == os.ModeSymlink && followLinks {
             finalPath, err := filepath.EvalSymlinks(path)
             if err != nil {
                 return err
             }
 
-			if visited[finalPath] {
-				// already visited this directory, skip it
-				return nil
-			}
+            finalPath = filepath.Clean(finalPath) // clean up the final path
 
-			visited[finalPath] = true
+            if visited[finalPath] {
+                // already visited this directory, skip it
+                return nil
+            }
+
+            visited[finalPath] = true
 
             finalInfo, err := os.Lstat(finalPath)
             if err != nil {
@@ -442,7 +502,7 @@ func walk(filename string, linkDirname string, followLinks bool, walkFn filepath
             }
 
             if finalInfo.IsDir() {
-                return walk(finalPath, path, followLinks, walkFn)
+                return walk(finalPath, path, followLinks, visited, walkFn)
             }
         }
 
@@ -454,5 +514,6 @@ func walk(filename string, linkDirname string, followLinks bool, walkFn filepath
 
 // Walk extends filepath.Walk to also follow symlinks
 func Walk(path string, followLinks bool, walkFn filepath.WalkFunc) error {
-	return walk(path, path, followLinks, walkFn)
+    visited := make(map[string]bool) // create visited map
+    return walk(path, path, followLinks, visited, walkFn)
 }
