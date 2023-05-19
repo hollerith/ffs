@@ -48,7 +48,7 @@ const (
 )
 
 func main() {
-	verbose, binary, errors, debugging, links, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, ignoreParser := parseFlags()
+	verbose, binary, errors, debugging, links, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, globalPattern, ignoreParser := parseFlags()
 
 	var lastDir string
 	var fileCount int
@@ -96,6 +96,16 @@ func main() {
 			return nil
 		}
 
+		// By default only search files according to .gitignore
+		if !globalPattern && (ignoreParser != nil && ignoreParser.MatchesPath(path)) {
+			return nil
+		}
+
+		// Ignore .git folders by default
+		if !globalPattern && strings.Contains(path, ".git") {
+			return nil
+		}
+
 		// Match filename regex pattern, optional TODO add a flag to match whole path
 		if filePatternRegex != nil && !filePatternRegex.MatchString(filename) {
 			return nil
@@ -132,7 +142,7 @@ func main() {
 				return nil
 			}
 		}
-	
+
 		// Add link pointer to metaData
 		if (fi.Mode()&os.ModeSymlink == os.ModeSymlink) {
 			linkPath, err := filepath.EvalSymlinks(path)
@@ -216,7 +226,7 @@ func main() {
 			groupStr := formatColumn(metaData.Group, groupWidth)
 			timeStr := formatColumn(metaData.ModTime, timeWidth)
 			mimeTypeStr := formatColumn(metaData.MimeType, mimeTypeWidth)
-			fileStr := filename 
+			fileStr := filename
 			if metaData.Link != "" {
 				// file is a link, color it light yellow
 				fileStr = fmt.Sprintf("\x1b[38;5;221m%s\x1b[0m --> %s", filename, metaData.Link)
@@ -235,8 +245,8 @@ func main() {
 				}
 				// Exclude symlinks from byteCount
 				byteCount += metaData.Size
-			}	
-			
+			}
+
 			var errorStr string
 			if (errors) {
 				errorStr = fmt.Sprintf("\033[90m - %s\033[0m", metaData.Error)
@@ -261,12 +271,12 @@ func main() {
 	if verbose || (stringPatternRegex == nil && hexPatternRegex == nil && metaPatternRegex == nil) {
 		fmt.Println("\n\x1b[36m- files:\x1b[0m", fileCount)
 		fmt.Printf("\x1b[36m- bytes:\x1b[0m %d (\x1b[33m%s\x1b[0m)\n", byteCount, humanizeBytes(byteCount))
-	
+
 		if !(stringPatternRegex == nil && hexPatternRegex == nil && metaPatternRegex == nil) {
 			fmt.Println("\x1b[36m- matches:\x1b[0m", matchCount)
 		}
 		fmt.Printf("\n")
-	}	
+	}
 }
 
 func replaceNonPrintable(s string) string {
@@ -369,9 +379,9 @@ func extractFileData(file *os.File) (Metadata, bool, error) {
 	return metadata, isBinary, nil
 }
 
-func parseFlags() (bool, bool, bool, bool, bool, string, int, *regexp.Regexp, *regexp.Regexp, *regexp.Regexp, *regexp.Regexp, ignore.IgnoreParser) {
+func parseFlags() (bool, bool, bool, bool, bool, string, int, *regexp.Regexp, *regexp.Regexp, *regexp.Regexp, *regexp.Regexp, bool, ignore.IgnoreParser) {
 	var filePattern, stringPattern, hexPattern, metaPattern string
-	var verbose, binary, errors, gitPattern, debugging, links bool
+	var verbose, binary, errors, globalPattern, debugging, links bool
 	var root string
 	var depth int
 	var ignoreParser ignore.IgnoreParser
@@ -386,7 +396,7 @@ func parseFlags() (bool, bool, bool, bool, bool, string, int, *regexp.Regexp, *r
 	pflag.BoolVarP(&errors, "errors", "e", false, "print errors encountered during execution")
 	pflag.BoolVarP(&debugging, "debugging", "t", false, "set debugging and trace during execution")
 	pflag.BoolVarP(&links, "links", "l", false, "follow symbolic links to directories")
-	pflag.BoolVarP(&gitPattern, "gitignore", "g", false, "search according to .gitignore")
+	pflag.BoolVarP(&globalPattern, "gitignore", "g", false, "search all including .gitignore paths")
 
 	pflag.IntVarP(&depth, "depth", "d", -1, "depth to recurse, -1 for infinite depth")
 
@@ -434,7 +444,7 @@ func parseFlags() (bool, bool, bool, bool, bool, string, int, *regexp.Regexp, *r
 			fmt.Printf("Error compiling file pattern regex: %v\n", err)
 			os.Exit(1)
 		}
-	}	
+	}
 
 	if stringPattern != "" {
 		stringPatternRegex, err = regexp.Compile(stringPattern)
@@ -460,7 +470,7 @@ func parseFlags() (bool, bool, bool, bool, bool, string, int, *regexp.Regexp, *r
 		}
 	}
 
-	if gitPattern {
+	if !globalPattern {
 		ignoreFilePath := filepath.Join(root, ".gitignore")
 		if _, err := os.Stat(ignoreFilePath); os.IsNotExist(err) {
 			if errors {
@@ -475,7 +485,7 @@ func parseFlags() (bool, bool, bool, bool, bool, string, int, *regexp.Regexp, *r
 		}
 	}
 
-	return verbose, binary, errors, debugging, links, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, ignoreParser
+	return verbose, binary, errors, debugging, links, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, globalPattern, ignoreParser
 }
 
 func humanizeBytes(bytes int64) string {
