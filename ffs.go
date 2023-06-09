@@ -530,7 +530,7 @@ func walk(filename string, linkDirname string, followLinks bool, visited map[str
             }
 
             if finalInfo.IsDir() {
-                return walk(path, finalPath, followLinks, visited, walkFn)
+                return walk(finalPath, path, followLinks, visited, walkFn)
             }
         }
 
