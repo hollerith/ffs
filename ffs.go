@@ -91,11 +91,6 @@ func main() {
 			directory = root
 		}
 
-		// Only search files according to .gitignore
-		if ignoreParser != nil && ignoreParser.MatchesPath(path) {
-			return nil
-		}
-
 		// By default only search files according to .gitignore
 		if !globalPattern && (ignoreParser != nil && ignoreParser.MatchesPath(path)) {
 			return nil
@@ -287,6 +282,7 @@ func printResults(fileCount int, lastDir string, directory string, filename stri
 
 	return lastDir, fileCount, matchCount, byteCount
 }
+
 func replaceNonPrintable(s string) string {
 	b := []byte(s)
 	for i, c := range b {
@@ -297,7 +293,6 @@ func replaceNonPrintable(s string) string {
 	return string(b)
 }
 
-// Truncate or pad string to fit within width with ellipsis
 func formatColumn(s string, width int) string {
 	if len(s) <= width {
 		return s + strings.Repeat(" ", width-len(s))
@@ -467,13 +462,11 @@ func walk(filename string, linkDirname string, followLinks bool, visited map[str
     return filepath.Walk(filename, symWalkFunc)
 }
 
-// Walk extends filepath.Walk to also follow symlinks
 func Walk(path string, followLinks bool, walkFn filepath.WalkFunc) error {
     visited := make(map[string]bool) // create visited map
     return walk(path, path, followLinks, visited, walkFn)
 }
 
-// extract file details
 func extractFileData(file *os.File) (Metadata, bool, error) {
 	var metadata Metadata
 	isBinary := false
