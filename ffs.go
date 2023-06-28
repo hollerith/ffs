@@ -48,7 +48,7 @@ const (
 )
 
 func main() {
-	verbose, binary, errors, debugging, links, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, globalPattern, ignoreParser := parseFlags()
+	verbose, binary, errors, tracing, links, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, globalPattern, ignoreParser := parseFlags()
 
 	var lastDir string
 	var fileCount int
@@ -65,7 +65,7 @@ func main() {
 			}
 			return nil
 		} else {
-			if debugging {
+			if tracing {
 				fmt.Printf("%s\n", path)
 			}
 		}
@@ -89,11 +89,6 @@ func main() {
 		directory = strings.TrimSuffix(directory, string(os.PathSeparator))
 		if directory == "" {
 			directory = root
-		}
-
-		// Only search files according to .gitignore
-		if ignoreParser != nil && ignoreParser.MatchesPath(path) {
-			return nil
 		}
 
 		// By default only search files according to .gitignore
@@ -182,7 +177,7 @@ func main() {
 				if match {
 					matchCount++
 					if verbose {
-						fmt.Printf("%s:%d:%s\n", path, lineNumber, replaceNonPrintable(line))
+						fmt.Printf("\x1b[38;5;221m%s\x1b[0m:\x1b[38;5;39m%d\x1b[0m:\x1b[38;5;8m%s\x1b[0m\n", path, lineNumber, replaceNonPrintable(line))
 					}
 				}
 				lineNumber++
@@ -197,71 +192,12 @@ func main() {
 
 		// Print results
 		if (matchCount > lastCount) || (stringPatternRegex == nil && hexPatternRegex == nil && metaPatternRegex == nil) {
-
-			// Print directory
-			if fileCount == 0 || directory != lastDir {
-				lastDir = directory
-				// Check if the directory is a symlink
-				dirInfo, err := os.Lstat(lastDir)
-				if err == nil && dirInfo.Mode()&os.ModeSymlink == os.ModeSymlink {
-					// directory is a symlink, print final path in light yellow with arrow pointing to actual path in regular green
-					finalPath, err := filepath.EvalSymlinks(lastDir)
-					if err != nil {
-						fmt.Printf("\n\033[38;5;221m%s\033[0m (could not resolve symlink):\n", lastDir)
-					} else {
-						fmt.Printf("\n\033[38;5;221m%s\033[0m --> \033[32m%s\033[0m:\n", lastDir, finalPath)
-					}
-				} else {
-					fmt.Printf("\n\033[32m%s\033[0m:\n", lastDir)
-				}
-			}
-
-			// Print the current file details
-			sizeStr := fmt.Sprintf("%*d", sizeWidth, metaData.Size)
-			modeStr := formatColumn(metaData.Mode, modeWidth)
-			if metaData.Suid {
-				modeStr = fmt.Sprintf("\x1b[31m%s\x1b[0m", modeStr)
-			}
-			ownerStr := formatColumn(metaData.Owner, ownerWidth)
-			groupStr := formatColumn(metaData.Group, groupWidth)
-			timeStr := formatColumn(metaData.ModTime, timeWidth)
-			mimeTypeStr := formatColumn(metaData.MimeType, mimeTypeWidth)
-			fileStr := filename
-			if metaData.Link != "" {
-				// file is a link, color it light yellow
-				fileStr = fmt.Sprintf("\x1b[38;5;221m%s\x1b[0m --> %s", filename, metaData.Link)
-			} else {
-				if fi.Mode().Perm()&0111 != 0 {
-					if fi.Mode().Perm()&0007 != 0 {
-						// file is world executable, color it dark red
-						fileStr = fmt.Sprintf("\x1b[38;5;124m%s\x1b[0m", filename)
-					} else if fi.Mode().Perm()&0070 != 0 {
-						// file is group executable, color it light red
-						fileStr = fmt.Sprintf("\x1b[38;5;211m%s\x1b[0m", filename)
-					} else {
-						// file is owner executable, color it light pink
-						fileStr = fmt.Sprintf("\x1b[38;5;219m%s\x1b[0m", filename)
-					}
-				}
-				// Exclude symlinks from byteCount
-				byteCount += metaData.Size
-			}
-
-			var errorStr string
-			if (errors) {
-				errorStr = fmt.Sprintf("\033[90m - %s\033[0m", metaData.Error)
-			}
-
-			if verbose {
-				fmt.Printf("%s %s %s %s %s %s %s %s\n", modeStr, ownerStr, groupStr, sizeStr, timeStr, mimeTypeStr, fileStr, errorStr)
-			} else {
-				fmt.Printf("%s\n", fileStr)
-			}
-			fileCount++
+			lastDir, fileCount, matchCount, byteCount = printResults(fileCount, lastDir, directory, filename, metaData, fi, byteCount, matchCount, verbose, errors)
 		}
 
 		return nil
 	})
+
 	if err != nil {
 		if errors {
 			fmt.Printf("Error walking directories: %v\n", err)
@@ -279,6 +215,74 @@ func main() {
 	}
 }
 
+func printResults(fileCount int, lastDir string, directory string, filename string, metaData Metadata, fi os.FileInfo, byteCount int64, matchCount int, verbose bool, errors bool) (string, int, int, int64) {
+	// Print directory
+	if fileCount == 0 || lastDir != directory {
+		lastDir = directory
+		// Check if the directory is a symlink
+		dirInfo, err := os.Lstat(lastDir)
+		if err == nil && dirInfo.Mode()&os.ModeSymlink == os.ModeSymlink {
+			// directory is a symlink, print final path in light yellow with arrow pointing to actual path in regular green
+			finalPath, err := filepath.EvalSymlinks(lastDir)
+			if err != nil {
+				fmt.Printf("\n\033[38;5;221m%s\033[0m (could not resolve symlink):\n", lastDir)
+			} else {
+				fmt.Printf("\n\033[38;5;221m%s\033[0m --> \033[32m%s\033[0m:\n", lastDir, finalPath)
+			}
+		} else {
+			fmt.Printf("\n\033[32m%s\033[0m:\n", lastDir)
+		}
+	}
+
+	// Print the current file details
+	sizeStr := fmt.Sprintf("%*d", sizeWidth, metaData.Size)
+	modeStr := formatColumn(metaData.Mode, modeWidth)
+	if metaData.Suid {
+		modeStr = fmt.Sprintf("\x1b[31m%s\x1b[0m", modeStr)
+	}
+	ownerStr := formatColumn(metaData.Owner, ownerWidth)
+	groupStr := formatColumn(metaData.Group, groupWidth)
+	timeStr := formatColumn(metaData.ModTime, timeWidth)
+	mimeTypeStr := formatColumn(metaData.MimeType, mimeTypeWidth)
+	fileStr := filename
+	if metaData.Link != "" {
+		// file is a link, color it light yellow
+		fileStr = fmt.Sprintf("\x1b[38;5;221m%s\x1b[0m --> %s", filename, metaData.Link)
+	} else {
+		if fi.Mode().Perm()&0111 != 0 {
+			if fi.Mode().Perm()&0007 != 0 {
+				// file is world executable, color it dark red
+				fileStr = fmt.Sprintf("\x1b[38;5;124m%s\x1b[0m", filename)
+			} else if fi.Mode().Perm()&0070 != 0 {
+				// file is group executable, color it light red
+				fileStr = fmt.Sprintf("\x1b[38;5;211m%s\x1b[0m", filename)
+			} else {
+				// file is owner executable, color it light pink
+				fileStr = fmt.Sprintf("\x1b[38;5;219m%s\x1b[0m", filename)
+			}
+		} else {
+			fileStr = fmt.Sprintf("\x1b[38;5;117m%s\x1b[0m", filename)
+		}
+		// Exclude symlinks from byteCount
+		byteCount += metaData.Size
+	}
+
+	var errorStr string
+	if errors {
+		errorStr = fmt.Sprintf("\033[90m - %s\033[0m", metaData.Error)
+	}
+
+	if verbose {
+		fmt.Printf("%s %s %s %s %s %s %s %s\n", modeStr, ownerStr, groupStr, sizeStr, timeStr, mimeTypeStr, fileStr, errorStr)
+	} else {
+		fmt.Printf("%s\n", fileStr)
+	}
+
+	fileCount++
+
+	return lastDir, fileCount, matchCount, byteCount
+}
+
 func replaceNonPrintable(s string) string {
 	b := []byte(s)
 	for i, c := range b {
@@ -289,7 +293,6 @@ func replaceNonPrintable(s string) string {
 	return string(b)
 }
 
-// Truncate or pad string to fit within width with ellipsis
 func formatColumn(s string, width int) string {
 	if len(s) <= width {
 		return s + strings.Repeat(" ", width-len(s))
@@ -298,7 +301,172 @@ func formatColumn(s string, width int) string {
 	}
 }
 
-// extract file details
+func parseFlags() (bool, bool, bool, bool, bool, string, int, *regexp.Regexp, *regexp.Regexp, *regexp.Regexp, *regexp.Regexp, bool, ignore.IgnoreParser) {
+	var filePattern, stringPattern, hexPattern, metaPattern string
+	var verbose, binary, errors, globalPattern, tracing, links bool
+	var root string
+	var depth int
+	var ignoreParser ignore.IgnoreParser
+
+	pflag.StringVarP(&filePattern, "file", "f", "", "regex pattern to match file names")
+	pflag.StringVarP(&stringPattern, "string", "s", "", "regex pattern to match file string")
+	pflag.StringVarP(&hexPattern, "hex", "x", "", "regex pattern to match hex-encoded lines")
+	pflag.StringVarP(&metaPattern, "meta", "m", "", "regex pattern to match file metadata lines")
+
+	pflag.BoolVarP(&verbose, "verbose", "v", false, "enable verbose mode")
+	pflag.BoolVarP(&binary, "binary", "b", false, "exclude binary files in search")
+	pflag.BoolVarP(&errors, "errors", "e", false, "print errors encountered during execution")
+	pflag.BoolVarP(&tracing, "tracing", "t", false, "set debugging and trace during execution")
+	pflag.BoolVarP(&links, "links", "l", false, "follow symbolic links to directories")
+	pflag.BoolVarP(&globalPattern, "global", "g", false, "search all including .gitignore paths")
+
+	pflag.IntVarP(&depth, "depth", "d", -1, "depth to recurse, -1 for infinite depth")
+
+	pflag.Parse()
+
+	rootArgs := pflag.Args()
+	if len(rootArgs) > 0 {
+		homedir, _ := os.UserHomeDir()
+		root = strings.Replace(rootArgs[0], "~", homedir, 1)
+		// assume there is a lazy wildcard globbing shorthand in the first argument
+		if strings.Contains(root, "*") && filePattern == "" {
+			root, filePattern = filepath.Split(root)
+		} else {
+			_, err := os.Stat(root)
+			if os.IsNotExist(err) {
+				fmt.Printf("Error: directory '%s' does not exist.\n", root)
+				os.Exit(1)
+			}
+		}
+	} else {
+		root = "."
+	}
+
+	if tracing {
+		debug.SetGCPercent(25)
+		go func() {
+			log.Println(http.ListenAndServe("localhost:6060", nil))
+		}()
+	}
+
+	var filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex *regexp.Regexp
+	var err error
+
+	if filePattern != "" {
+		// assume someone (i.e. me) has typed a globbing pattern instead of regex and convert
+		if filePattern == "*.*" {
+			filePattern = ".*\\..*$"
+		}
+		if strings.HasPrefix(filePattern, "*.") {
+			filePattern = ".*\\." + filePattern[2:] + "$"
+		}
+
+		filePatternRegex, err = regexp.Compile(filePattern + "$")
+		if err != nil {
+			fmt.Printf("Error compiling file pattern regex: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	if stringPattern != "" {
+		stringPatternRegex, err = regexp.Compile(stringPattern)
+		if err != nil {
+			fmt.Printf("Error compiling string pattern regex: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	if hexPattern != "" {
+		hexPatternRegex, err = regexp.Compile(hexPattern)
+		if err != nil {
+			fmt.Printf("Error compiling hex pattern regex: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	if metaPattern != "" {
+		metaPatternRegex, err = regexp.Compile(metaPattern)
+		if err != nil {
+			fmt.Printf("Error compiling metadata pattern regex: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	if !globalPattern {
+		ignoreFilePath := filepath.Join(root, ".gitignore")
+		if _, err := os.Stat(ignoreFilePath); os.IsNotExist(err) {
+			if errors {
+				fmt.Printf("No .gitignore file in %s\n", root)
+			}
+		} else {
+			ignoreParser, err = ignore.CompileIgnoreFile(ignoreFilePath)
+			if err != nil {
+				fmt.Printf("Error parsing .gitignore file: %v\n", err)
+				os.Exit(1)
+			}
+		}
+	}
+
+	return verbose, binary, errors, tracing, links, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, globalPattern, ignoreParser
+}
+
+func humanizeBytes(bytes int64) string {
+    const unit = 1024
+    if bytes < unit {
+        return fmt.Sprintf("%d B", bytes)
+    }
+    div, exp := int64(unit), 0
+    for n := bytes / unit; n >= unit; n /= unit {
+        div *= unit
+        exp++
+    }
+    return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+func walk(filename string, linkDirname string, followLinks bool, visited map[string]bool, walkFn filepath.WalkFunc) error {
+    symWalkFunc := func(path string, info os.FileInfo, err error) error {
+        if fname, err := filepath.Rel(filename, path); err == nil {
+            path = filepath.Join(linkDirname, fname)
+        } else {
+            return err
+        }
+
+        if err == nil && info.Mode()&os.ModeSymlink == os.ModeSymlink && followLinks {
+            finalPath, err := filepath.EvalSymlinks(path)
+            if err != nil {
+                return err
+            }
+
+            finalPath = filepath.Clean(finalPath) // clean up the final path
+
+            if visited[finalPath] {
+                // already visited this directory, skip it
+                return nil
+            }
+
+            visited[finalPath] = true
+
+            finalInfo, err := os.Lstat(finalPath)
+            if err != nil {
+                return walkFn(path, info, err)
+            }
+
+            if finalInfo.IsDir() {
+                return walk(finalPath, path, followLinks, visited, walkFn)
+            }
+        }
+
+        return walkFn(path, info, err)
+    }
+
+    return filepath.Walk(filename, symWalkFunc)
+}
+
+func Walk(path string, followLinks bool, walkFn filepath.WalkFunc) error {
+    visited := make(map[string]bool) // create visited map
+    return walk(path, path, followLinks, visited, walkFn)
+}
+
 func extractFileData(file *os.File) (Metadata, bool, error) {
 	var metadata Metadata
 	isBinary := false
@@ -377,171 +545,4 @@ func extractFileData(file *os.File) (Metadata, bool, error) {
 	metadata.ExifData = string(jsonByte)
 
 	return metadata, isBinary, nil
-}
-
-func parseFlags() (bool, bool, bool, bool, bool, string, int, *regexp.Regexp, *regexp.Regexp, *regexp.Regexp, *regexp.Regexp, bool, ignore.IgnoreParser) {
-	var filePattern, stringPattern, hexPattern, metaPattern string
-	var verbose, binary, errors, globalPattern, debugging, links bool
-	var root string
-	var depth int
-	var ignoreParser ignore.IgnoreParser
-
-	pflag.StringVarP(&filePattern, "file", "f", "", "regex pattern to match file names")
-	pflag.StringVarP(&stringPattern, "string", "s", "", "regex pattern to match file string")
-	pflag.StringVarP(&hexPattern, "hex", "x", "", "regex pattern to match hex-encoded lines")
-	pflag.StringVarP(&metaPattern, "meta", "m", "", "regex pattern to match file metadata lines")
-
-	pflag.BoolVarP(&verbose, "verbose", "v", false, "enable verbose mode")
-	pflag.BoolVarP(&binary, "binary", "b", false, "exclude binary files in search")
-	pflag.BoolVarP(&errors, "errors", "e", false, "print errors encountered during execution")
-	pflag.BoolVarP(&debugging, "debugging", "t", false, "set debugging and trace during execution")
-	pflag.BoolVarP(&links, "links", "l", false, "follow symbolic links to directories")
-	pflag.BoolVarP(&globalPattern, "gitignore", "g", false, "search all including .gitignore paths")
-
-	pflag.IntVarP(&depth, "depth", "d", -1, "depth to recurse, -1 for infinite depth")
-
-	pflag.Parse()
-
-	rootArgs := pflag.Args()
-	if len(rootArgs) > 0 {
-		homedir, _ := os.UserHomeDir()
-		root = strings.Replace(rootArgs[0], "~", homedir, 1)
-		// assume there is a lazy wildcard globbing shorthand in the first argument
-		if strings.Contains(root, "*") && filePattern == "" {
-			root, filePattern = filepath.Split(root)
-		} else {
-			_, err := os.Stat(root)
-			if os.IsNotExist(err) {
-				fmt.Printf("Error: directory '%s' does not exist.\n", root)
-				os.Exit(1)
-			}
-		}
-	} else {
-		root = "."
-	}
-
-	if debugging {
-		debug.SetGCPercent(25)
-		go func() {
-			log.Println(http.ListenAndServe("localhost:6060", nil))
-		}()
-	}
-
-	var filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex *regexp.Regexp
-	var err error
-
-	if filePattern != "" {
-		// assume someone (i.e. me) has typed a globbing pattern instead of regex and convert
-		if filePattern == "*.*" {
-			filePattern = ".*\\..*$"
-		}
-		if strings.HasPrefix(filePattern, "*.") {
-			filePattern = ".*\\." + filePattern[2:] + "$"
-		}
-
-		filePatternRegex, err = regexp.Compile(filePattern + "$")
-		if err != nil {
-			fmt.Printf("Error compiling file pattern regex: %v\n", err)
-			os.Exit(1)
-		}
-	}
-
-	if stringPattern != "" {
-		stringPatternRegex, err = regexp.Compile(stringPattern)
-		if err != nil {
-			fmt.Printf("Error compiling string pattern regex: %v\n", err)
-			os.Exit(1)
-		}
-	}
-
-	if hexPattern != "" {
-		hexPatternRegex, err = regexp.Compile(hexPattern)
-		if err != nil {
-			fmt.Printf("Error compiling hex pattern regex: %v\n", err)
-			os.Exit(1)
-		}
-	}
-
-	if metaPattern != "" {
-		metaPatternRegex, err = regexp.Compile(metaPattern)
-		if err != nil {
-			fmt.Printf("Error compiling metadata pattern regex: %v\n", err)
-			os.Exit(1)
-		}
-	}
-
-	if !globalPattern {
-		ignoreFilePath := filepath.Join(root, ".gitignore")
-		if _, err := os.Stat(ignoreFilePath); os.IsNotExist(err) {
-			if errors {
-				fmt.Printf("No .gitignore file in %s\n", root)
-			}
-		} else {
-			ignoreParser, err = ignore.CompileIgnoreFile(ignoreFilePath)
-			if err != nil {
-				fmt.Printf("Error parsing .gitignore file: %v\n", err)
-				os.Exit(1)
-			}
-		}
-	}
-
-	return verbose, binary, errors, debugging, links, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, globalPattern, ignoreParser
-}
-
-func humanizeBytes(bytes int64) string {
-    const unit = 1024
-    if bytes < unit {
-        return fmt.Sprintf("%d B", bytes)
-    }
-    div, exp := int64(unit), 0
-    for n := bytes / unit; n >= unit; n /= unit {
-        div *= unit
-        exp++
-    }
-    return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
-}
-
-func walk(filename string, linkDirname string, followLinks bool, visited map[string]bool, walkFn filepath.WalkFunc) error {
-    symWalkFunc := func(path string, info os.FileInfo, err error) error {
-        if fname, err := filepath.Rel(filename, path); err == nil {
-            path = filepath.Join(linkDirname, fname)
-        } else {
-            return err
-        }
-
-        if err == nil && info.Mode()&os.ModeSymlink == os.ModeSymlink && followLinks {
-            finalPath, err := filepath.EvalSymlinks(path)
-            if err != nil {
-                return err
-            }
-
-            finalPath = filepath.Clean(finalPath) // clean up the final path
-
-            if visited[finalPath] {
-                // already visited this directory, skip it
-                return nil
-            }
-
-            visited[finalPath] = true
-
-            finalInfo, err := os.Lstat(finalPath)
-            if err != nil {
-                return walkFn(path, info, err)
-            }
-
-            if finalInfo.IsDir() {
-                return walk(finalPath, path, followLinks, visited, walkFn)
-            }
-        }
-
-        return walkFn(path, info, err)
-    }
-
-    return filepath.Walk(filename, symWalkFunc)
-}
-
-// Walk extends filepath.Walk to also follow symlinks
-func Walk(path string, followLinks bool, walkFn filepath.WalkFunc) error {
-    visited := make(map[string]bool) // create visited map
-    return walk(path, path, followLinks, visited, walkFn)
 }
