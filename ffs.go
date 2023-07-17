@@ -161,6 +161,7 @@ func main() {
 			scanner := bufio.NewScanner(file)
 			scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // set buffer size to 1MB
 			lineNumber := 1
+			hasPrintedFileDetails := false
 			for scanner.Scan() {
 				line := scanner.Text()
 				var match bool
@@ -176,6 +177,11 @@ func main() {
 				}
 				if match {
 					matchCount++
+					// Print results before printing the source line
+					if !hasPrintedFileDetails {
+						lastDir, fileCount, matchCount, byteCount = printResults(fileCount, lastDir, directory, filename, metaData, fi, byteCount, matchCount, verbose, errors)
+						hasPrintedFileDetails = true
+					}
 					if verbose {
 						fmt.Printf("\x1b[38;5;221m%s\x1b[0m:\x1b[38;5;39m%d\x1b[0m:\x1b[38;5;8m%s\x1b[0m\n", path, lineNumber, replaceNonPrintable(line))
 					}
@@ -188,11 +194,11 @@ func main() {
 				}
 				return nil
 			}
-		}
-
-		// Print results
-		if (matchCount > lastCount) || (stringPatternRegex == nil && hexPatternRegex == nil && metaPatternRegex == nil) {
-			lastDir, fileCount, matchCount, byteCount = printResults(fileCount, lastDir, directory, filename, metaData, fi, byteCount, matchCount, verbose, errors)
+		} else {
+			// Print results
+			if (matchCount > lastCount) || (stringPatternRegex == nil && hexPatternRegex == nil && metaPatternRegex == nil) {
+				lastDir, fileCount, matchCount, byteCount = printResults(fileCount, lastDir, directory, filename, metaData, fi, byteCount, matchCount, verbose, errors)
+			}
 		}
 
 		return nil
