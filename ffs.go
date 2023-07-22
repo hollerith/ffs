@@ -12,7 +12,6 @@ import (
 	"os/user"
 	"path/filepath"
 	"regexp"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"syscall"
@@ -48,7 +47,7 @@ const (
 )
 
 func main() {
-	verbose, binary, errors, tracing, links, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, globalPattern, ignoreParser := parseFlags()
+	verbose, binary, errors, links, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, globalPattern, ignoreParser := parseFlags()
 
 	var lastDir string
 	var fileCount int
@@ -64,10 +63,6 @@ func main() {
 				fmt.Printf("Error processing file %s: %v\n", path, err)
 			}
 			return nil
-		} else {
-			if tracing {
-				fmt.Printf("%s\n", path)
-			}
 		}
 
 		// Check if file is a directory and if depth is reached
@@ -308,9 +303,10 @@ func formatColumn(s string, width int) string {
 	}
 }
 
-func parseFlags() (bool, bool, bool, bool, bool, string, int, *regexp.Regexp, *regexp.Regexp, *regexp.Regexp, *regexp.Regexp, bool, ignore.IgnoreParser) {
+// verbose, binary, errors, links, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, globalPattern, ignoreParser
+func parseFlags() (bool, bool, bool, bool, string, int, *regexp.Regexp, *regexp.Regexp, *regexp.Regexp, *regexp.Regexp, bool, ignore.IgnoreParser) {
 	var filePattern, stringPattern, hexPattern, metaPattern string
-	var verbose, binary, errors, globalPattern, tracing, links bool
+	var verbose, binary, errors, globalPattern, links bool
 	var root string
 	var depth int
 	var ignoreParser ignore.IgnoreParser
@@ -323,7 +319,6 @@ func parseFlags() (bool, bool, bool, bool, bool, string, int, *regexp.Regexp, *r
 	pflag.BoolVarP(&verbose, "verbose", "v", false, "enable verbose mode")
 	pflag.BoolVarP(&binary, "binary", "b", false, "exclude binary files in search")
 	pflag.BoolVarP(&errors, "errors", "e", false, "print errors encountered during execution")
-	pflag.BoolVarP(&tracing, "tracing", "t", false, "set debugging and trace during execution")
 	pflag.BoolVarP(&links, "links", "l", false, "follow symbolic links to directories")
 	pflag.BoolVarP(&globalPattern, "global", "g", false, "search all including .gitignore paths")
 
@@ -347,13 +342,6 @@ func parseFlags() (bool, bool, bool, bool, bool, string, int, *regexp.Regexp, *r
 		}
 	} else {
 		root = "."
-	}
-
-	if tracing {
-		debug.SetGCPercent(25)
-		go func() {
-			log.Println(http.ListenAndServe("localhost:6060", nil))
-		}()
 	}
 
 	var filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex *regexp.Regexp
@@ -414,7 +402,7 @@ func parseFlags() (bool, bool, bool, bool, bool, string, int, *regexp.Regexp, *r
 		}
 	}
 
-	return verbose, binary, errors, tracing, links, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, globalPattern, ignoreParser
+	return verbose, binary, errors, links, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, globalPattern, ignoreParser
 }
 
 func humanizeBytes(bytes int64) string {
