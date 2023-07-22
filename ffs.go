@@ -210,7 +210,7 @@ func main() {
 		}
 	}
 
-	if verbose || (stringPatternRegex == nil && hexPatternRegex == nil && metaPatternRegex == nil) {
+	if verbose {
 		fmt.Println("\n\x1b[36m- files:\x1b[0m", fileCount)
 		fmt.Printf("\x1b[36m- bytes:\x1b[0m %d (\x1b[33m%s\x1b[0m)\n", byteCount, humanizeBytes(byteCount))
 
@@ -222,66 +222,67 @@ func main() {
 }
 
 func printResults(fileCount int, lastDir string, directory string, filename string, metaData Metadata, fi os.FileInfo, byteCount int64, matchCount int, verbose bool, errors bool) (string, int, int, int64) {
-	// Print directory
-	if fileCount == 0 || lastDir != directory {
-		lastDir = directory
-		// Check if the directory is a symlink
-		dirInfo, err := os.Lstat(lastDir)
-		if err == nil && dirInfo.Mode()&os.ModeSymlink == os.ModeSymlink {
-			// directory is a symlink, print final path in light yellow with arrow pointing to actual path in regular green
-			finalPath, err := filepath.EvalSymlinks(lastDir)
-			if err != nil {
-				fmt.Printf("\n\033[38;5;221m%s\033[0m (could not resolve symlink):\n", lastDir)
-			} else {
-				fmt.Printf("\n\033[38;5;221m%s\033[0m --> \033[32m%s\033[0m:\n", lastDir, finalPath)
-			}
-		} else {
-			fmt.Printf("\n\033[32m%s\033[0m:\n", lastDir)
-		}
-	}
-
-	// Print the current file details
-	sizeStr := fmt.Sprintf("%*d", sizeWidth, metaData.Size)
-	modeStr := formatColumn(metaData.Mode, modeWidth)
-	if metaData.Suid {
-		modeStr = fmt.Sprintf("\x1b[31m%s\x1b[0m", modeStr)
-	}
-	ownerStr := formatColumn(metaData.Owner, ownerWidth)
-	groupStr := formatColumn(metaData.Group, groupWidth)
-	timeStr := formatColumn(metaData.ModTime, timeWidth)
-	mimeTypeStr := formatColumn(metaData.MimeType, mimeTypeWidth)
-	fileStr := filename
-	if metaData.Link != "" {
-		// file is a link, color it light yellow
-		fileStr = fmt.Sprintf("\x1b[38;5;221m%s\x1b[0m --> %s", filename, metaData.Link)
-	} else {
-		if fi.Mode().Perm()&0111 != 0 {
-			if fi.Mode().Perm()&0007 != 0 {
-				// file is world executable, color it dark red
-				fileStr = fmt.Sprintf("\x1b[38;5;124m%s\x1b[0m", filename)
-			} else if fi.Mode().Perm()&0070 != 0 {
-				// file is group executable, color it light red
-				fileStr = fmt.Sprintf("\x1b[38;5;211m%s\x1b[0m", filename)
-			} else {
-				// file is owner executable, color it light pink
-				fileStr = fmt.Sprintf("\x1b[38;5;219m%s\x1b[0m", filename)
-			}
-		} else {
-			fileStr = fmt.Sprintf("\x1b[38;5;117m%s\x1b[0m", filename)
-		}
-		// Exclude symlinks from byteCount
-		byteCount += metaData.Size
-	}
-
-	var errorStr string
-	if errors {
-		errorStr = fmt.Sprintf("\033[90m - %s\033[0m", metaData.Error)
-	}
 
 	if verbose {
+		// Print directory
+		if fileCount == 0 || lastDir != directory {
+			lastDir = directory
+			// Check if the directory is a symlink
+			dirInfo, err := os.Lstat(lastDir)
+			if err == nil && dirInfo.Mode()&os.ModeSymlink == os.ModeSymlink {
+				// directory is a symlink, print final path in light yellow with arrow pointing to actual path in regular green
+				finalPath, err := filepath.EvalSymlinks(lastDir)
+				if err != nil {
+					fmt.Printf("\n\033[38;5;221m%s\033[0m (could not resolve symlink):\n", lastDir)
+				} else {
+					fmt.Printf("\n\033[38;5;221m%s\033[0m --> \033[32m%s\033[0m:\n", lastDir, finalPath)
+				}
+			} else {
+				fmt.Printf("\n\033[32m%s\033[0m:\n", lastDir)
+			}
+		}
+
+		// Print the current file details
+		sizeStr := fmt.Sprintf("%*d", sizeWidth, metaData.Size)
+		modeStr := formatColumn(metaData.Mode, modeWidth)
+		if metaData.Suid {
+			modeStr = fmt.Sprintf("\x1b[31m%s\x1b[0m", modeStr)
+		}
+		ownerStr := formatColumn(metaData.Owner, ownerWidth)
+		groupStr := formatColumn(metaData.Group, groupWidth)
+		timeStr := formatColumn(metaData.ModTime, timeWidth)
+		mimeTypeStr := formatColumn(metaData.MimeType, mimeTypeWidth)
+		fileStr := filename
+		if metaData.Link != "" {
+			// file is a link, color it light yellow
+			fileStr = fmt.Sprintf("\x1b[38;5;221m%s\x1b[0m --> %s", filename, metaData.Link)
+		} else {
+			if fi.Mode().Perm()&0111 != 0 {
+				if fi.Mode().Perm()&0007 != 0 {
+					// file is world executable, color it dark red
+					fileStr = fmt.Sprintf("\x1b[38;5;124m%s\x1b[0m", filename)
+				} else if fi.Mode().Perm()&0070 != 0 {
+					// file is group executable, color it light red
+					fileStr = fmt.Sprintf("\x1b[38;5;211m%s\x1b[0m", filename)
+				} else {
+					// file is owner executable, color it light pink
+					fileStr = fmt.Sprintf("\x1b[38;5;219m%s\x1b[0m", filename)
+				}
+			} else {
+				fileStr = fmt.Sprintf("\x1b[38;5;117m%s\x1b[0m", filename)
+			}
+			// Exclude symlinks from byteCount
+			byteCount += metaData.Size
+		}
+
+		var errorStr string
+		if errors {
+			errorStr = fmt.Sprintf("\033[90m - %s\033[0m", metaData.Error)
+		}
+
 		fmt.Printf("%s %s %s %s %s %s %s %s\n", modeStr, ownerStr, groupStr, sizeStr, timeStr, mimeTypeStr, fileStr, errorStr)
 	} else {
-		fmt.Printf("%s\n", fileStr)
+		fmt.Printf("%s/%s\n", directory, filename) // prints path relative to root unless full root specified
 	}
 
 	fileCount++
