@@ -150,7 +150,7 @@ func main() {
 		}
 
 		// Scan each line of the file content
-		if stringPatternRegex != nil {
+		if stringPatternRegex != nil || hexPatternRegex != nil {
 			file.Seek(0, 0) // reset file pointer to the beginning of the file
 			scanner := bufio.NewScanner(file)
 			scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // set buffer size to 1MB

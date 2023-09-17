@@ -7,10 +7,10 @@ SYNOPSIS
        ffs [OPTION]... [ROOT]
 
 DESCRIPTION
-       ffs searches for regex patterns in files and prints the matching lines. The search can be 
-       limited to specific file names or file contents using the -f and -s options, respectively, 
-       or to hex-encoded lines using the -x option. The -b option can be used to exclude binary 
-       files from the search. The search starts at the specified ROOT directory, or the current 
+       ffs searches for regex patterns in files and prints the matching lines. The search can be
+       limited to specific file names or file contents using the -f and -s options, respectively,
+       or to hex-encoded lines using the -x option. The -b option can be used to exclude binary
+       files from the search. The search starts at the specified ROOT directory, or the current
        directory if none is provided. If there is a .gitignore file in the directory then only
        files not ignored by git will be searched. No search criteria will list all files. The
        program can follow symlinks and recursion can be limited to a number of depths. File
@@ -52,7 +52,7 @@ OPTIONS
 
        -l, --links
               Follow symbolic links to directories.
-       
+
        -h, --help
               Print usage information
 
@@ -73,7 +73,7 @@ EXAMPLES
               ffs /bin -m "rwxr-xr-x.*0 - root" -l -v
 
        Find files with hex-encoded bytes "50 61 73 73 77 6f 72 64" in the current directory:
-              ffs -h "50 61 73 73 77 6f 72 64" -d 0 
+              ffs -x "50 61 73 73 77 6f 72 64" -d 0
 
        Search for python files containing the string "import" and print the matching lines:
               ffs -f "\.py$" -s "import"
@@ -91,8 +91,8 @@ EXAMPLES
               ffs -f '^(!.*node_modules).*$' -s 'react'
 
        List all files under git version control in tests directory:
-              ffs tests -g 
-       
+              ffs tests -g
+
        Use shorthand globbing pattern to specify start directory and file pattern:
               ffs ~/Downloads/*.iso
 
