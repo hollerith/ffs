@@ -46,16 +46,15 @@ const (
 	truncateLength = 3
 )
 
+var lastDir string
+var fileCount int
+var matchCount int
+var byteCount int64
+
 func main() {
 	verbose, binary, errors, links, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, globalPattern, ignoreParser := parseFlags()
 
-	var lastDir string
-	var fileCount int
-	var matchCount int
-	var byteCount int64
-
-	// Search
-	err := Walk(root, links, func(path string, info os.FileInfo, err error) error {
+	search := func(path string, info os.FileInfo, err error) error {
 		var lastCount = matchCount
 
 		if err != nil {
@@ -80,12 +79,6 @@ func main() {
 			return nil
 		}
 
-		directory, filename := filepath.Split(path)
-		directory = strings.TrimSuffix(directory, string(os.PathSeparator))
-		if directory == "" {
-			directory = root
-		}
-
 		// By default only search files according to .gitignore
 		if !globalPattern && (ignoreParser != nil && ignoreParser.MatchesPath(path)) {
 			return nil
@@ -94,6 +87,12 @@ func main() {
 		// Ignore .git folders by default
 		if !globalPattern && strings.Contains(path, ".git") {
 			return nil
+		}
+
+		directory, filename := filepath.Split(path)
+		directory = strings.TrimSuffix(directory, string(os.PathSeparator))
+		if directory == "" {
+			directory = root
 		}
 
 		// Match filename regex pattern, optional TODO add a flag to match whole path
@@ -197,7 +196,10 @@ func main() {
 		}
 
 		return nil
-	})
+	}
+
+	// Search
+	err := Walk(root, links, search)
 
 	if err != nil {
 		if errors {
