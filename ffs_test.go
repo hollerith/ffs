@@ -20,6 +20,25 @@ func setup() {
 
 }
 
+func setupTestFiles(t *testing.T) string {
+    testDir := "./tests/fixtures"
+    if err := os.Mkdir(testDir, 0755); err != nil {
+        t.Fatalf("Could not create temp directory: %v", err)
+    }
+
+    file1Path := filepath.Join(testDir, "file1.txt")
+    if err := ioutil.WriteFile(file1Path, []byte("This is a sample text."), 0644); err != nil {
+        t.Fatalf("Could not create file1: %v", err)
+    }
+
+    file2Path := filepath.Join(testDir, "file2.txt")
+    if err := ioutil.WriteFile(file2Path, []byte("This is another sample."), 0644); err != nil {
+        t.Fatalf("Could not create file2: %v", err)
+    }
+
+    return testDir
+}
+
 func TestWalkFunction_NestedDir(t *testing.T) {
 	setup()
 
@@ -83,21 +102,8 @@ func TestSearchSimple(t *testing.T) {
 func TestSearchFileFlag(t *testing.T) {
 	setup()
 
-	testDir := "./tests/fixtures"
-	if err := os.Mkdir(testDir, 0755); err != nil {
-		t.Fatalf("Could not create temp directory: %v", err)
-	}
-	defer os.RemoveAll(testDir)
-
-	file1Path := filepath.Join(testDir, "file1.txt")
-	if err := ioutil.WriteFile(file1Path, []byte("This is a sample text."), 0644); err != nil {
-		t.Fatalf("Could not create file1: %v", err)
-	}
-
-	file2Path := filepath.Join(testDir, "file2.txt")
-	if err := ioutil.WriteFile(file2Path, []byte("This is another sample."), 0644); err != nil {
-		t.Fatalf("Could not create file2: %v", err)
-	}
+    testDir := setupTestFiles(t)
+    defer os.RemoveAll(testDir)
 
 	// Run your FFS application with specific arguments to search for "sample"
 	os.Args = []string{"ffs", testDir, "--file", "*.txt", "--verbose", "--global"}
@@ -163,21 +169,8 @@ func TestSearchFileFlagWithRegex(t *testing.T) {
 func TestSearchTextFlag(t *testing.T) {
 	setup()
 
-	testDir := "./tests/fixtures"
-	if err := os.Mkdir(testDir, 0755); err != nil {
-		t.Fatalf("Could not create temp directory: %v", err)
-	}
-	defer os.RemoveAll(testDir)
-
-	file1Path := filepath.Join(testDir, "file1.txt")
-	if err := ioutil.WriteFile(file1Path, []byte("This is a sample text."), 0644); err != nil {
-		t.Fatalf("Could not create file1: %v", err)
-	}
-
-	file2Path := filepath.Join(testDir, "file2.txt")
-	if err := ioutil.WriteFile(file2Path, []byte("This is another sample."), 0644); err != nil {
-		t.Fatalf("Could not create file2: %v", err)
-	}
+    testDir := setupTestFiles(t)
+    defer os.RemoveAll(testDir)
 
 	os.Args = []string{"ffs", testDir, "--string", "sample", "--verbose", "--global"}
 	main()
@@ -202,21 +195,8 @@ func TestSearchTextFlag(t *testing.T) {
 func TestSearchTextFlag_Negative(t *testing.T) {
 	setup()
 
-	testDir := "./tests/fixtures"
-	if err := os.Mkdir(testDir, 0755); err != nil {
-		t.Fatalf("Could not create temp directory: %v", err)
-	}
-	defer os.RemoveAll(testDir)
-
-	file1Path := filepath.Join(testDir, "file1.txt")
-	if err := ioutil.WriteFile(file1Path, []byte("This is a sample text."), 0644); err != nil {
-		t.Fatalf("Could not create file1: %v", err)
-	}
-
-	file2Path := filepath.Join(testDir, "file2.txt")
-	if err := ioutil.WriteFile(file2Path, []byte("This is another sample."), 0644); err != nil {
-		t.Fatalf("Could not create file2: %v", err)
-	}
+    testDir := setupTestFiles(t)
+    defer os.RemoveAll(testDir)
 
 	os.Args = []string{"ffs", testDir, "--string", "notfound", "--verbose", "--global"}
 	main()
@@ -316,21 +296,8 @@ func TestSearchOnlyPath(t *testing.T) {
 func TestEmptySearchString(t *testing.T) {
 	setup()
 
-	testDir := "./tests/fixtures"
-	if err := os.Mkdir(testDir, 0755); err != nil {
-		t.Fatalf("Could not create temp directory: %v", err)
-	}
-	defer os.RemoveAll(testDir)
-
-	file1Path := filepath.Join(testDir, "file1.txt")
-	if err := ioutil.WriteFile(file1Path, []byte("This is a sample text."), 0644); err != nil {
-		t.Fatalf("Could not create file1: %v", err)
-	}
-
-	file2Path := filepath.Join(testDir, "file2.txt")
-	if err := ioutil.WriteFile(file2Path, []byte("This is another sample."), 0644); err != nil {
-		t.Fatalf("Could not create file2: %v", err)
-	}
+    testDir := setupTestFiles(t)
+    defer os.RemoveAll(testDir)
 
 	os.Args = []string{"ffs", testDir, "--string", "", "--verbose", "--global"}
 	main()
@@ -355,21 +322,8 @@ func TestEmptySearchString(t *testing.T) {
 func TestMetaFlag(t *testing.T) {
     setup()
 
-    testDir := "./tests/fixtures"
-    if err := os.Mkdir(testDir, 0755); err != nil {
-        t.Fatalf("Could not create temp directory: %v", err)
-    }
+    testDir := setupTestFiles(t)
     defer os.RemoveAll(testDir)
-
-    file1Path := filepath.Join(testDir, "file1.txt")
-    if err := ioutil.WriteFile(file1Path, []byte("This is a sample text."), 0644); err != nil {
-        t.Fatalf("Could not create file1: %v", err)
-    }
-
-    file2Path := filepath.Join(testDir, "file2.txt")
-    if err := ioutil.WriteFile(file2Path, []byte("This is another sample."), 0644); err != nil {
-        t.Fatalf("Could not create file2: %v", err)
-    }
 
     os.Args = []string{"ffs", testDir, "--meta", "text/plain", "--verbose", "--global"}
     main()
@@ -394,26 +348,13 @@ func TestMetaFlag(t *testing.T) {
 func TestSearchStringWithGitIgnore(t *testing.T) {
     setup()
 
-    testDir := "./tests/fixtures"
-    if err := os.Mkdir(testDir, 0755); err != nil {
-        t.Fatalf("Could not create temp directory: %v", err)
-    }
+    testDir := setupTestFiles(t)
     defer os.RemoveAll(testDir)
 
     // Create a .gitignore file that excludes "file1.txt"
     gitignorePath := filepath.Join(testDir, ".gitignore")
     if err := ioutil.WriteFile(gitignorePath, []byte("file1.txt"), 0644); err != nil {
         t.Fatalf("Could not create .gitignore file: %v", err)
-    }
-
-    file1Path := filepath.Join(testDir, "file1.txt")
-    if err := ioutil.WriteFile(file1Path, []byte("This is a sample text."), 0644); err != nil {
-        t.Fatalf("Could not create file1: %v", err)
-    }
-
-    file2Path := filepath.Join(testDir, "file2.txt")
-    if err := ioutil.WriteFile(file2Path, []byte("This is another sample."), 0644); err != nil {
-        t.Fatalf("Could not create file2: %v", err)
     }
 
     os.Args = []string{"ffs", testDir, "--string", "sample", "--verbose"}
@@ -476,26 +417,13 @@ func TestSearchHex(t *testing.T) {
 func TestSearchMultipleWithGitIgnore(t *testing.T) {
     setup()
 
-    testDir := "./tests/fixtures"
-    if err := os.Mkdir(testDir, 0755); err != nil {
-        t.Fatalf("Could not create temp directory: %v", err)
-    }
+    testDir := setupTestFiles(t)
     defer os.RemoveAll(testDir)
 
     // Create a .gitignore file that excludes "file1.txt"
     gitignorePath := filepath.Join(testDir, ".gitignore")
     if err := ioutil.WriteFile(gitignorePath, []byte("file1.txt"), 0644); err != nil {
         t.Fatalf("Could not create .gitignore file: %v", err)
-    }
-
-    file1Path := filepath.Join(testDir, "file1.txt")
-    if err := ioutil.WriteFile(file1Path, []byte("This is a sample text."), 0644); err != nil {
-        t.Fatalf("Could not create file1: %v", err)
-    }
-
-    file2Path := filepath.Join(testDir, "file2.txt")
-    if err := ioutil.WriteFile(file2Path, []byte("This is another sample."), 0644); err != nil {
-        t.Fatalf("Could not create file2: %v", err)
     }
 
     os.Args = []string{"ffs", testDir, "--file", "file.*", "--string", "sample", "--meta", "text", "--verbose"}
