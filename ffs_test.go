@@ -65,6 +65,21 @@ func TestWalkFunction_DifferentFileTypes(t *testing.T) {
 	}
 }
 
+func TestSearchSimple(t *testing.T) {
+    setup()
+
+    testDir := "./tests"
+
+    os.Args = []string{"ffs", testDir}
+    main()
+
+    expectedFileCount := 6  // Six files should be found
+
+    if fileCount != expectedFileCount {
+        t.Errorf("Expected fileCount: %d, Got: %d", expectedFileCount, fileCount)
+    }
+}
+
 func TestSearchFileFlag(t *testing.T) {
 	setup()
 
