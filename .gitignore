@@ -1,11 +1,12 @@
 *
+
 !*.go
 !*.mod
-!*.sum
 !*.md
 !.gitignore
 !/.github/
 !/.github/workflows/
 !/.github/workflows/*.yml
 PROMPT.md
-!/tests/**
+!tests/
+!tests/**
