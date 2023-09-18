@@ -4,6 +4,7 @@
 # But not these file types
 !*.go
 !*.mod
+!*.sum
 !*.md
 
 # Don't ignore .gitignore and GitHub workflow settings
