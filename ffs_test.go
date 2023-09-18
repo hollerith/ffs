@@ -252,6 +252,52 @@ func TestNoFilesFound(t *testing.T) {
 	}
 }
 
+func TestSearchOnlyPath(t *testing.T) {
+    setup()
+
+    testDir := "./tests/fixtures"
+    if err := os.MkdirAll(testDir, 0755); err != nil {
+        t.Fatalf("Could not create temp directory: %v", err)
+    }
+    defer os.RemoveAll(testDir)
+
+    // Create a main.js file that includes 'react'
+    mainFilePath := filepath.Join(testDir, "main.js")
+    if err := ioutil.WriteFile(mainFilePath, []byte("#find react"), 0644); err != nil {
+        t.Fatalf("Could not create main.js: %v", err)
+    }
+
+    // Create a node_modules directory and a react.js file inside it
+    nodeModulesDir := filepath.Join(testDir, "node_modules")
+    if err := os.Mkdir(nodeModulesDir, 0755); err != nil {
+        t.Fatalf("Could not create node_modules directory: %v", err)
+    }
+
+    reactFilePath := filepath.Join(nodeModulesDir, "react.js")
+    if err := ioutil.WriteFile(reactFilePath, []byte("#find react"), 0644); err != nil {
+        t.Fatalf("Could not create react.js: %v", err)
+    }
+
+    os.Args = []string{"ffs", testDir, "--file", ".*node_modules.*", "--string", "react", "--verbose", "--global"}
+    main()
+
+    expectedFileCount := 1          // Should only include main.js and exclude node_modules
+    expectedByteCount := int64(11)  // "import react from 'react';" is 24 bytes
+    expectedMatchCount := 1         // One match in main.js
+
+    if fileCount != expectedFileCount {
+        t.Errorf("Expected fileCount: %d, Got: %d", expectedFileCount, fileCount)
+    }
+
+    if byteCount != expectedByteCount {
+        t.Errorf("Expected byteCount: %d, Got: %d", expectedByteCount, byteCount)
+    }
+
+    if matchCount != expectedMatchCount {
+        t.Errorf("Expected matchCount: %d, Got: %d", expectedMatchCount, matchCount)
+    }
+}
+
 func TestEmptySearchString(t *testing.T) {
 	setup()
 

@@ -87,14 +87,11 @@ EXAMPLES
        pattern matches any value in the range of 00:00 to 59:59 for the minutes and seconds.
               ffs -f "\.log\.\d$" -s "^(09|10|11|12|13|14|15):[0-5][0-9]:[0-5][0-9]"
 
-       Search to exclude the node_modules directory from the search:
-              ffs -f '^(!.*node_modules).*$' -s 'react'
+       Search only the node_modules directory from the search:
+              ffs -f '^(.*node_modules).*$' -s 'react'
 
-       List all files under git version control in tests directory:
+       List all files including not git version control in tests directory:
               ffs tests -g
-
-       Use shorthand globbing pattern to specify start directory and file pattern:
-              ffs ~/Downloads/*.iso
 
 AUTHOR
        Eliot Alderson

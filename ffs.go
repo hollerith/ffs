@@ -96,7 +96,7 @@ func main() {
 		}
 
 		// Match filename regex pattern, optional TODO add a flag to match whole path
-		if filePatternRegex != nil && !filePatternRegex.MatchString(filename) {
+		if filePatternRegex != nil && !filePatternRegex.MatchString(path) {
 			return nil
 		}
 
