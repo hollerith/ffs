@@ -1,0 +1,9 @@
+*
+!*.go
+!*.mod
+!*.md
+!.gitignore
+!/.github/
+!/.github/workflows/
+!/.github/workflows/*.yml
+PROMPT.md
