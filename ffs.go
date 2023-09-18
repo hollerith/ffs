@@ -84,15 +84,15 @@ func main() {
 			return nil
 		}
 
-		// Ignore .git folders by default
-		if !globalPattern && strings.Contains(path, ".git") {
-			return nil
-		}
-
 		directory, filename := filepath.Split(path)
 		directory = strings.TrimSuffix(directory, string(os.PathSeparator))
 		if directory == "" {
 			directory = root
+		}
+
+		// Ignore .git folders by default
+		if !globalPattern && strings.Contains(path, ".git") {
+			return nil
 		}
 
 		// Match filename regex pattern, optional TODO add a flag to match whole path
@@ -145,7 +145,7 @@ func main() {
 		}
 
 		// Check if file is binary and skip if set to exclude binary files
-		if binary && isBinary {
+		if !binary && isBinary {
 			return nil
 		}
 

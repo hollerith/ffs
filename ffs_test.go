@@ -2,6 +2,9 @@ package main
 
 import (
 	"io/ioutil"
+	"io"
+	"strings"
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -65,7 +68,7 @@ func TestWalkFunction_DifferentFileTypes(t *testing.T) {
 func TestSearchFileFlag(t *testing.T) {
 	setup()
 
-	testDir := "./fixtures"
+	testDir := "./tests/fixtures"
 	if err := os.Mkdir(testDir, 0755); err != nil {
 		t.Fatalf("Could not create temp directory: %v", err)
 	}
@@ -105,7 +108,7 @@ func TestSearchFileFlag(t *testing.T) {
 func TestSearchFileFlagWithRegex(t *testing.T) {
     setup()
 
-    testDir := "./fixtures"
+    testDir := "./tests/fixtures"
     if err := os.Mkdir(testDir, 0755); err != nil {
         t.Fatalf("Could not create temp directory: %v", err)
     }
@@ -145,7 +148,7 @@ func TestSearchFileFlagWithRegex(t *testing.T) {
 func TestSearchTextFlag(t *testing.T) {
 	setup()
 
-	testDir := "./fixtures"
+	testDir := "./tests/fixtures"
 	if err := os.Mkdir(testDir, 0755); err != nil {
 		t.Fatalf("Could not create temp directory: %v", err)
 	}
@@ -184,7 +187,7 @@ func TestSearchTextFlag(t *testing.T) {
 func TestSearchTextFlag_Negative(t *testing.T) {
 	setup()
 
-	testDir := "./fixtures"
+	testDir := "./tests/fixtures"
 	if err := os.Mkdir(testDir, 0755); err != nil {
 		t.Fatalf("Could not create temp directory: %v", err)
 	}
@@ -252,7 +255,7 @@ func TestNoFilesFound(t *testing.T) {
 func TestEmptySearchString(t *testing.T) {
 	setup()
 
-	testDir := "./fixtures"
+	testDir := "./tests/fixtures"
 	if err := os.Mkdir(testDir, 0755); err != nil {
 		t.Fatalf("Could not create temp directory: %v", err)
 	}
@@ -291,7 +294,7 @@ func TestEmptySearchString(t *testing.T) {
 func TestMetaFlag(t *testing.T) {
     setup()
 
-    testDir := "./fixtures"
+    testDir := "./tests/fixtures"
     if err := os.Mkdir(testDir, 0755); err != nil {
         t.Fatalf("Could not create temp directory: %v", err)
     }
@@ -330,7 +333,7 @@ func TestMetaFlag(t *testing.T) {
 func TestSearchStringWithGitIgnore(t *testing.T) {
     setup()
 
-    testDir := "./fixtures"
+    testDir := "./tests/fixtures"
     if err := os.Mkdir(testDir, 0755); err != nil {
         t.Fatalf("Could not create temp directory: %v", err)
     }
@@ -376,7 +379,7 @@ func TestSearchStringWithGitIgnore(t *testing.T) {
 func TestSearchHex(t *testing.T) {
     setup()
 
-    testDir := "./fixtures"
+    testDir := "./tests/fixtures"
     if err := os.Mkdir(testDir, 0755); err != nil {
         t.Fatalf("Could not create temp directory: %v", err)
     }
@@ -412,7 +415,7 @@ func TestSearchHex(t *testing.T) {
 func TestSearchMultipleWithGitIgnore(t *testing.T) {
     setup()
 
-    testDir := "./fixtures"
+    testDir := "./tests/fixtures"
     if err := os.Mkdir(testDir, 0755); err != nil {
         t.Fatalf("Could not create temp directory: %v", err)
     }
@@ -457,7 +460,7 @@ func TestSearchMultipleWithGitIgnore(t *testing.T) {
 func TestSearchWithDepthFlag(t *testing.T) {
     setup()
 
-    testDir := "./fixtures"
+    testDir := "./tests/fixtures"
     if err := os.Mkdir(testDir, 0755); err != nil {
         t.Fatalf("Could not create temp directory: %v", err)
     }
@@ -487,6 +490,229 @@ func TestSearchWithDepthFlag(t *testing.T) {
     expectedFileCount := 1     		// Only one file at depth 3 should be matched
     expectedByteCount := int64(20) 	// Total bytes from the matched file
     expectedMatchCount := 1    		// One match
+
+    if fileCount != expectedFileCount {
+        t.Errorf("Expected fileCount: %d, Got: %d", expectedFileCount, fileCount)
+    }
+
+    if byteCount != expectedByteCount {
+        t.Errorf("Expected byteCount: %d, Got: %d", expectedByteCount, byteCount)
+    }
+
+    if matchCount != expectedMatchCount {
+        t.Errorf("Expected matchCount: %d, Got: %d", expectedMatchCount, matchCount)
+    }
+}
+
+func TestSearchWithDepthLimit(t *testing.T) {
+    setup()
+
+    testDir := "./tests/fixtures"
+    level1Dir := "./tests/fixtures/level1"
+    level2Dir := "./tests/fixtures/level1/level2"
+    level3Dir := "./tests/fixtures/level1/level2/level3"
+
+    for _, dir := range []string{testDir, level1Dir, level2Dir, level3Dir} {
+        if err := os.Mkdir(dir, 0755); err != nil {
+            t.Fatalf("Could not create directory %s: %v", dir, err)
+        }
+    }
+
+    defer os.RemoveAll(testDir)
+
+    filePath := filepath.Join(level3Dir, "deepFile.txt")
+    if err := ioutil.WriteFile(filePath, []byte("This is a deep test."), 0644); err != nil {
+        t.Fatalf("Could not create deepFile: %v", err)
+    }
+
+    os.Args = []string{"ffs", testDir, "--string", "deep", "--depth", "2", "--verbose", "--global"}
+    main()
+
+    expectedFileCount := 0
+    expectedByteCount := int64(0)
+    expectedMatchCount := 0
+
+    if fileCount != expectedFileCount {
+        t.Errorf("Expected fileCount: %d, Got: %d", expectedFileCount, fileCount)
+    }
+
+    if byteCount != expectedByteCount {
+        t.Errorf("Expected byteCount: %d, Got: %d", expectedByteCount, byteCount)
+    }
+
+    if matchCount != expectedMatchCount {
+        t.Errorf("Expected matchCount: %d, Got: %d", expectedMatchCount, matchCount)
+    }
+}
+
+func TestSearchWithLinks(t *testing.T) {
+    setup()
+
+    testDir := "./tests/fixtures"
+    if err := os.Mkdir(testDir, 0755); err != nil {
+        t.Fatalf("Could not create temp directory: %v", err)
+    }
+    defer os.RemoveAll(testDir)
+
+    // Create a sample file with content
+    filePath := filepath.Join(testDir, "sample_file.txt")
+    if err := ioutil.WriteFile(filePath, []byte("This is a symlink test."), 0644); err != nil {
+        t.Fatalf("Could not create sample_file: %v", err)
+    }
+
+    // Create a symlink to the sample file
+    symlinkPath := filepath.Join(testDir, "sample_symlink.txt")
+    if err := os.Symlink(filePath, symlinkPath); err != nil {
+        t.Fatalf("Could not create symlink: %v", err)
+    }
+
+    // Run ffs with --links flag
+    os.Args = []string{"ffs", testDir, "--string", "symlink", "--links", "--verbose", "--global"}
+    main()
+
+    expectedFileCount := 1     		// Both the file and its symlink should be matched
+    expectedByteCount := int64(23) 	// Total bytes from the matched files
+    expectedMatchCount := 1    		// Two matches
+
+    if fileCount != expectedFileCount {
+        t.Errorf("Expected fileCount: %d, Got: %d", expectedFileCount, fileCount)
+    }
+
+    if byteCount != expectedByteCount {
+        t.Errorf("Expected byteCount: %d, Got: %d", expectedByteCount, byteCount)
+    }
+
+    if matchCount != expectedMatchCount {
+        t.Errorf("Expected matchCount: %d, Got: %d", expectedMatchCount, matchCount)
+    }
+}
+
+func TestSearchWithGitignoreAndLinks(t *testing.T) {
+    setup()
+
+    testDir := "./tests/fixtures"
+    if err := os.Mkdir(testDir, 0755); err != nil {
+        t.Fatalf("Could not create temp directory: %v", err)
+    }
+    defer os.RemoveAll(testDir)
+
+    // Create a sub-directory and a symlink to that directory
+    subDir := filepath.Join(testDir, "subDir")
+    if err := os.Mkdir(subDir, 0755); err != nil {
+        t.Fatalf("Could not create sub-directory: %v", err)
+    }
+
+    linkDir := filepath.Join(testDir, "linkDir")
+    if err := os.Symlink("./subDir", linkDir); err != nil {
+        t.Fatalf("Could not create symlink to directory: %v", err)
+    }
+
+    // Create a sample file in the sub-directory
+    filePath := filepath.Join(subDir, "sample_file.txt")
+    if err := ioutil.WriteFile(filePath, []byte("This is in a symlinked directory."), 0644); err != nil {
+        t.Fatalf("Could not create sample_file: %v", err)
+    }
+
+    // Create a .gitignore file that excludes the sub-directory
+    gitignorePath := filepath.Join(testDir, ".gitignore")
+    if err := ioutil.WriteFile(gitignorePath, []byte("subDir"), 0644); err != nil {
+        t.Fatalf("Could not create .gitignore file: %v", err)
+    }
+
+    // Run ffs with --links flag but without --global
+    os.Args = []string{"ffs", testDir, "--string", "symlinked", "--links", "--verbose"}
+    main()
+
+    expectedFileCount := 1     		// One file should be matched due to links .gitignore
+    expectedByteCount := int64(33) 	// 33 bytes should be matched
+    expectedMatchCount := 1    		// Links bypasses the .gitignore and matches the file
+
+    if fileCount != expectedFileCount {
+        t.Errorf("Expected fileCount: %d, Got: %d", expectedFileCount, fileCount)
+    }
+
+    if byteCount != expectedByteCount {
+        t.Errorf("Expected byteCount: %d, Got: %d", expectedByteCount, byteCount)
+    }
+
+    if matchCount != expectedMatchCount {
+        t.Errorf("Expected matchCount: %d, Got: %d", expectedMatchCount, matchCount)
+    }
+}
+
+func TestSearchWithErrorsFlag(t *testing.T) {
+    setup()
+
+    testDir := "./tests/fixtures"
+    if err := os.Mkdir(testDir, 0755); err != nil {
+        t.Fatalf("Could not create temp directory: %v", err)
+    }
+    defer os.RemoveAll(testDir)
+
+    // Create a readable file
+    readableFilePath := filepath.Join(testDir, "readable.txt")
+    if err := ioutil.WriteFile(readableFilePath, []byte("This is readable."), 0644); err != nil {
+        t.Fatalf("Could not create readableFile: %v", err)
+    }
+
+    // Create an unreadable file
+    unreadableFilePath := filepath.Join(testDir, "unreadable.txt")
+    if err := ioutil.WriteFile(unreadableFilePath, []byte("This is unreadable."), 0000); err != nil {
+        t.Fatalf("Could not create unreadableFile: %v", err)
+    }
+
+    // Redirect stdout and stderr to capture messages
+    oldStdout := os.Stdout
+    oldStderr := os.Stderr
+    r, w, _ := os.Pipe()
+    os.Stdout = w
+    os.Stderr = w
+
+    os.Args = []string{"ffs", testDir, "--string", "readable", "--errors", "--verbose", "--global"}
+    main()
+
+    // Revert the stdout and stderr redirection
+    w.Close()
+    os.Stdout = oldStdout
+    os.Stderr = oldStderr
+
+    var buf bytes.Buffer
+    io.Copy(&buf, r)
+    capturedOutput := buf.String()
+
+    // Validate the output to make sure an error message was printed
+    if !strings.Contains(capturedOutput, "unreadable.txt") {
+        t.Errorf("Expected an error for unreadable.txt, but did not find one in output")
+    }
+}
+
+func TestSearchWithBinaryFlag(t *testing.T) {
+    setup()
+
+    testDir := "./tests/fixtures"
+    if err := os.MkdirAll(testDir, 0755); err != nil {
+        t.Fatalf("Could not create temp directory: %v", err)
+    }
+    defer os.RemoveAll(testDir)
+
+    // Create a text file
+    textFilePath := filepath.Join(testDir, "textFile.txt")
+    if err := ioutil.WriteFile(textFilePath, []byte("Search me"), 0644); err != nil {
+        t.Fatalf("Could not create textFile: %v", err)
+    }
+
+    // Create a binary file that also contains the string "Search"
+    binaryFilePath := filepath.Join(testDir, "binaryFile.bin")
+    if err := ioutil.WriteFile(binaryFilePath, []byte{0x00, 0x01, 0x02, 0x03, 'S', 'e', 'a', 'r', 'c', 'h'}, 0644); err != nil {
+        t.Fatalf("Could not create binaryFile: %v", err)
+    }
+
+    os.Args = []string{"ffs", testDir, "--string", "Search", "--binary", "--verbose", "--global"}
+    main()
+
+    expectedFileCount := 2  // Should include both text and binary files
+    expectedByteCount := int64(9 + 10)  // "Search me" is 9 bytes, binary file is 10 bytes
+    expectedMatchCount := 2  // One match in text file, one in binary file
 
     if fileCount != expectedFileCount {
         t.Errorf("Expected fileCount: %d, Got: %d", expectedFileCount, fileCount)
