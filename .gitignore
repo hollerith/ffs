@@ -16,5 +16,5 @@
 # Ignore PROMPT.md
 PROMPT.md
 
-# Don't ignore the 'tests/' directory and everything in it
-!tests/
+# Don't ignore the 'tests/' directory
+!/tests/
