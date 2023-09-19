@@ -1,9 +1,19 @@
 *
+
+# Don't ignore the 'tests/' directory
+!./tests/**
+
+# But not these file types
 !*.go
 !*.mod
+!*.sum
 !*.md
+
+# Don't ignore .gitignore and GitHub workflow settings
 !.gitignore
 !/.github/
 !/.github/workflows/
 !/.github/workflows/*.yml
+
+# Ignore PROMPT.md
 PROMPT.md
