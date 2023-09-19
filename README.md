@@ -15,8 +15,8 @@ DESCRIPTION
        files not ignored by git will be searched. No search criteria will list all files. The
        program can follow symlinks and recursion can be limited to a number of depths. File
        search patterns which look like common glob are converted to the equivalent regex. If
-       the ROOT argument contains such a pattern then it acts a shorthand for a start directory
-       and file match.
+       the ROOT argument contains such a pattern then it acts as a shorthand for a start
+       directory and file match.
 
 OPTIONS
        -f, --file=regex_pattern
