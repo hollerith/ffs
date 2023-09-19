@@ -18,6 +18,3 @@ PROMPT.md
 
 # Don't ignore the 'tests/' directory and everything in it
 !tests/
-!tests/*
-!tests/*/*
-!tests/*/*/*

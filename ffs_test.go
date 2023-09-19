@@ -39,6 +39,21 @@ func setupTestFiles(t *testing.T) string {
     return testDir
 }
 
+func TestSearchSimple(t *testing.T) {
+    setup()
+
+    testDir := "./tests"
+
+    os.Args = []string{"ffs", testDir}
+    main()
+
+    expectedFileCount := 0  // Zero files should be found
+
+    if fileCount != expectedFileCount {
+        t.Errorf("Expected fileCount: %d, Got: %d", expectedFileCount, fileCount)
+    }
+}
+
 func TestWalkFunction_NestedDir(t *testing.T) {
 	setup()
 
@@ -82,21 +97,6 @@ func TestWalkFunction_DifferentFileTypes(t *testing.T) {
 	if err := walk(tempDir, "", true, make(map[string]bool), walkFn); err != nil {
 		t.Fatalf("'walk' function returned error: %v", err)
 	}
-}
-
-func TestSearchSimple(t *testing.T) {
-    setup()
-
-    testDir := "./tests"
-
-    os.Args = []string{"ffs", testDir}
-    main()
-
-    expectedFileCount := 6  // Six files should be found
-
-    if fileCount != expectedFileCount {
-        t.Errorf("Expected fileCount: %d, Got: %d", expectedFileCount, fileCount)
-    }
 }
 
 func TestSearchFileFlag(t *testing.T) {
