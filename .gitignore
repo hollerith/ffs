@@ -8,6 +8,7 @@
 !*.mod
 !*.sum
 !*.md
+!Makefile
 
 # Don't ignore .gitignore and GitHub workflow settings
 !.gitignore
