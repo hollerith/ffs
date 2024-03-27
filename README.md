@@ -47,8 +47,8 @@ OPTIONS
        -d, --depth=n
               Recurse at most n levels deep. The default is unlimited depth.
 
-       -t, --trace
-              Set debugging and tracing information during execution.
+       -t, --tree
+              Print indented directory/file structure.
 
        -l, --links
               Follow symbolic links to directories.
