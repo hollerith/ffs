@@ -2,7 +2,7 @@
 
 # Build the ffs binary
 build:
-	go build -o ffs ffs.go
+	go build . 
 
 # Run tests
 test:

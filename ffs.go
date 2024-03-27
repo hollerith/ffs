@@ -1,25 +1,20 @@
 package main
 
-import "net/http"
 import _ "net/http/pprof"
 
 import (
 	"bufio"
 	"fmt"
-	"io"
+
 	"log"
 	"os"
-	"os/user"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
-	"syscall"
-
-	"github.com/rwcarlsen/goexif/exif"
-	"github.com/spf13/pflag"
 
 	"github.com/sabhiram/go-gitignore"
+	"github.com/spf13/pflag"
 )
 
 type Metadata struct {
@@ -52,7 +47,7 @@ var matchCount int
 var byteCount int64
 
 func main() {
-	verbose, binary, errors, links, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, globalPattern, ignoreParser := parseFlags()
+	verbose, binary, errors, links, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, globalPattern, ignoreParser, tree := parseFlags()
 
 	search := func(path string, info os.FileInfo, err error) error {
 		var lastCount = matchCount
@@ -95,7 +90,7 @@ func main() {
 			return nil
 		}
 
-		// Match filename regex pattern, optional TODO add a flag to match whole path
+		// Match filename regex pattern, optional
 		if filePatternRegex != nil && !filePatternRegex.MatchString(path) {
 			return nil
 		}
@@ -109,6 +104,12 @@ func main() {
 			return nil
 		}
 		defer file.Close()
+
+		if tree {
+			depth := strings.Count(directory, string(os.PathSeparator))
+			indent := strings.Repeat(" ", depth)
+			fmt.Println(indent + filepath.Base(directory) + "/")
+		}
 
 		// Extract metadata and other file information
 		metaData, isBinary, err := extractFileData(file)
@@ -133,7 +134,7 @@ func main() {
 		}
 
 		// Add link pointer to metaData
-		if (fi.Mode()&os.ModeSymlink == os.ModeSymlink) {
+		if fi.Mode()&os.ModeSymlink == os.ModeSymlink {
 			linkPath, err := filepath.EvalSymlinks(path)
 			if err != nil {
 				if errors {
@@ -173,7 +174,7 @@ func main() {
 					matchCount++
 					// Print results before printing the source line
 					if !hasPrintedFileDetails {
-						lastDir, fileCount, matchCount, byteCount = printResults(fileCount, lastDir, directory, filename, metaData, fi, byteCount, matchCount, verbose, errors)
+						lastDir, fileCount, matchCount, byteCount = printResults(fileCount, lastDir, directory, filename, metaData, fi, byteCount, matchCount, verbose, tree, errors)
 						hasPrintedFileDetails = true
 					}
 					if verbose {
@@ -191,7 +192,7 @@ func main() {
 		} else {
 			// Print results
 			if (matchCount > lastCount) || (stringPatternRegex == nil && hexPatternRegex == nil && metaPatternRegex == nil) {
-				lastDir, fileCount, matchCount, byteCount = printResults(fileCount, lastDir, directory, filename, metaData, fi, byteCount, matchCount, verbose, errors)
+				lastDir, fileCount, matchCount, byteCount = printResults(fileCount, lastDir, directory, filename, metaData, fi, byteCount, matchCount, verbose, tree, errors)
 			}
 		}
 
@@ -218,7 +219,7 @@ func main() {
 	}
 }
 
-func printResults(fileCount int, lastDir string, directory string, filename string, metaData Metadata, fi os.FileInfo, byteCount int64, matchCount int, verbose bool, errors bool) (string, int, int, int64) {
+func printResults(fileCount int, lastDir string, directory string, filename string, metaData Metadata, fi os.FileInfo, byteCount int64, matchCount int, verbose bool, tree bool, errors bool) (string, int, int, int64) {
 
 	if verbose {
 		// Print directory
@@ -278,8 +279,13 @@ func printResults(fileCount int, lastDir string, directory string, filename stri
 		}
 
 		fmt.Printf("%s %s %s %s %s %s %s %s\n", modeStr, ownerStr, groupStr, sizeStr, timeStr, mimeTypeStr, fileStr, errorStr)
+	} else if tree {
+        depth := strings.Count(directory, string(os.PathSeparator))
+        indent := strings.Repeat(" ", depth)
+        fmt.Println(indent + " " + filename)
 	} else {
-		fmt.Printf("%s/%s\n", directory, filename) // prints path relative to root unless full root specified
+		// Default printing (neither verbose nor tree)
+		fmt.Printf("%s/%s\n", directory, filename)
 	}
 
 	fileCount++
@@ -287,28 +293,9 @@ func printResults(fileCount int, lastDir string, directory string, filename stri
 	return lastDir, fileCount, matchCount, byteCount
 }
 
-func replaceNonPrintable(s string) string {
-	b := []byte(s)
-	for i, c := range b {
-		if !strconv.IsPrint(rune(c)) {
-			b[i] = '.'
-		}
-	}
-	return string(b)
-}
-
-func formatColumn(s string, width int) string {
-	if len(s) <= width {
-		return s + strings.Repeat(" ", width-len(s))
-	} else {
-		return s[:width-3] + "..."
-	}
-}
-
-// verbose, binary, errors, links, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, globalPattern, ignoreParser
-func parseFlags() (bool, bool, bool, bool, string, int, *regexp.Regexp, *regexp.Regexp, *regexp.Regexp, *regexp.Regexp, bool, ignore.IgnoreParser) {
+func parseFlags() (bool, bool, bool, bool, string, int, *regexp.Regexp, *regexp.Regexp, *regexp.Regexp, *regexp.Regexp, bool, ignore.IgnoreParser, bool) {
 	var filePattern, stringPattern, hexPattern, metaPattern string
-	var verbose, binary, errors, globalPattern, links bool
+	var verbose, binary, errors, globalPattern, links, tree bool
 	var root string
 	var depth int
 	var ignoreParser ignore.IgnoreParser
@@ -317,22 +304,19 @@ func parseFlags() (bool, bool, bool, bool, string, int, *regexp.Regexp, *regexp.
 	pflag.StringVarP(&stringPattern, "string", "s", "", "regex pattern to match file string")
 	pflag.StringVarP(&hexPattern, "hex", "x", "", "regex pattern to match hex-encoded lines")
 	pflag.StringVarP(&metaPattern, "meta", "m", "", "regex pattern to match file metadata lines")
-
 	pflag.BoolVarP(&verbose, "verbose", "v", false, "enable verbose mode")
 	pflag.BoolVarP(&binary, "binary", "b", false, "exclude binary files in search")
 	pflag.BoolVarP(&errors, "errors", "e", false, "print errors encountered during execution")
 	pflag.BoolVarP(&links, "links", "l", false, "follow symbolic links to directories")
 	pflag.BoolVarP(&globalPattern, "global", "g", false, "search all including .gitignore paths")
-
+	pflag.BoolVarP(&tree, "tree", "t", false, "display results in a tree format")
 	pflag.IntVarP(&depth, "depth", "d", -1, "depth to recurse, -1 for infinite depth")
-
 	pflag.Parse()
 
 	rootArgs := pflag.Args()
 	if len(rootArgs) > 0 {
 		homedir, _ := os.UserHomeDir()
 		root = strings.Replace(rootArgs[0], "~", homedir, 1)
-		// assume there is a lazy wildcard globbing shorthand in the first argument
 		if strings.Contains(root, "*") && filePattern == "" {
 			root, filePattern = filepath.Split(root)
 		} else {
@@ -350,14 +334,6 @@ func parseFlags() (bool, bool, bool, bool, string, int, *regexp.Regexp, *regexp.
 	var err error
 
 	if filePattern != "" {
-		// assume someone (i.e. me) has typed a globbing pattern instead of regex and convert
-		if filePattern == "*.*" {
-			filePattern = ".*\\..*$"
-		}
-		if strings.HasPrefix(filePattern, "*.") {
-			filePattern = ".*\\." + filePattern[2:] + "$"
-		}
-
 		filePatternRegex, err = regexp.Compile(filePattern + "$")
 		if err != nil {
 			fmt.Printf("Error compiling file pattern regex: %v\n", err)
@@ -404,142 +380,5 @@ func parseFlags() (bool, bool, bool, bool, string, int, *regexp.Regexp, *regexp.
 		}
 	}
 
-	return verbose, binary, errors, links, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, globalPattern, ignoreParser
-}
-
-func humanizeBytes(bytes int64) string {
-    const unit = 1024
-    if bytes < unit {
-        return fmt.Sprintf("%d B", bytes)
-    }
-    div, exp := int64(unit), 0
-    for n := bytes / unit; n >= unit; n /= unit {
-        div *= unit
-        exp++
-    }
-    return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
-}
-
-func walk(filename string, linkDirname string, followLinks bool, visited map[string]bool, walkFn filepath.WalkFunc) error {
-    symWalkFunc := func(path string, info os.FileInfo, err error) error {
-        if fname, err := filepath.Rel(filename, path); err == nil {
-            path = filepath.Join(linkDirname, fname)
-        } else {
-            return err
-        }
-
-        if err == nil && info.Mode()&os.ModeSymlink == os.ModeSymlink && followLinks {
-            finalPath, err := filepath.EvalSymlinks(path)
-            if err != nil {
-                return err
-            }
-
-            finalPath = filepath.Clean(finalPath) // clean up the final path
-
-            if visited[finalPath] {
-                // already visited this directory, skip it
-                return nil
-            }
-
-            visited[finalPath] = true
-
-            finalInfo, err := os.Lstat(finalPath)
-            if err != nil {
-                return walkFn(path, info, err)
-            }
-
-            if finalInfo.IsDir() {
-                return walk(finalPath, path, followLinks, visited, walkFn)
-            }
-        }
-
-        return walkFn(path, info, err)
-    }
-
-    return filepath.Walk(filename, symWalkFunc)
-}
-
-func Walk(path string, followLinks bool, walkFn filepath.WalkFunc) error {
-    visited := make(map[string]bool) // create visited map
-    return walk(path, path, followLinks, visited, walkFn)
-}
-
-func extractFileData(file *os.File) (Metadata, bool, error) {
-	var metadata Metadata
-	isBinary := false
-
-	// Get file size, mode, owner, and group
-	fileInfo, err := file.Stat()
-	if err == nil {
-		metadata.Size = fileInfo.Size()
-		metadata.Mode = fileInfo.Mode().String()
-		metadata.Suid = (fileInfo.Mode()&os.ModeSetuid) != 0 && (fileInfo.Mode()&os.ModePerm) >= 04000
-
-		// Get owner and group ids
-		uid := fileInfo.Sys().(*syscall.Stat_t).Uid
-		gid := fileInfo.Sys().(*syscall.Stat_t).Gid
-
-		// Get owner and group names
-		u, err := user.LookupId(fmt.Sprintf("%d", uid))
-		if err == nil {
-			metadata.Owner = fmt.Sprintf("%d - %s", uid, u.Username)
-		} else {
-			metadata.Owner = fmt.Sprintf("%d", uid)
-		}
-
-		g, err := user.LookupGroupId(fmt.Sprintf("%d", gid))
-		if err == nil {
-			metadata.Group = fmt.Sprintf("%d - %s", gid, g.Name)
-		} else {
-			metadata.Group = fmt.Sprintf("%d", gid)
-		}
-
-		// Get file mod time
-		modTime := fileInfo.ModTime().Format("2006-01-02 15:04:05")
-		metadata.ModTime = modTime
-	}
-
-	// Determine number of bytes to read
-	numBytes := fileInfo.Size()
-	if numBytes > 512 {
-		numBytes = 512
-	}
-
-	// Extract MIME type
-	buf := make([]byte, numBytes)
-	_, err = file.Read(buf)
-	if err != nil {
-		return metadata, isBinary, err
-	}
-	metadata.MimeType = http.DetectContentType(buf)
-
-	// Check if MIME type belongs to a group of known binary file types
-	if !strings.HasPrefix(metadata.MimeType, "text/") {
-		isBinary = true
-	}
-
-	// If the file is not an image type return without exifdata
-	if !strings.HasPrefix(metadata.MimeType, "image/") {
-		return metadata, isBinary, nil
-	}
-
-	// Extract EXIF metadata
-	file.Seek(0, 0) // reset file pointer to the beginning of the file
-
-	exifData, err := exif.Decode(file)
-	if err != nil {
-		if err == io.EOF {
-			return metadata, isBinary, fmt.Errorf("EOF reached while reading file")
-		}
-		return metadata, isBinary, err
-	}
-
-	// Convert EXIF metadata to JSON string
-	jsonByte, err := exifData.MarshalJSON()
-	if err != nil {
-		return metadata, isBinary, err
-	}
-	metadata.ExifData = string(jsonByte)
-
-	return metadata, isBinary, nil
+	return verbose, binary, errors, links, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, globalPattern, ignoreParser, tree
 }
