@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"strings"
 	"strconv"
-	"github.com/rwcarlsen/goexif/exif"
 	"os"
 	"os/user"
 	"io"
 	"syscall"
 	"path/filepath"
+	"github.com/rwcarlsen/goexif/exif"
 )
 
 func replaceNonPrintable(s string) string {
@@ -124,6 +124,15 @@ func formatColumn(s string, width int) string {
 	} else {
 		return s[:width-3] + "..."
 	}
+}
+
+// Utility function to convert file glob to regex pattern
+func globToRegex(pattern string) string {
+    pattern = strings.Replace(pattern, ".", "\\.", -1)
+    pattern = strings.Replace(pattern, "*", ".*", -1)
+    pattern = strings.Replace(pattern, "?", ".", -1)
+	fmt.Printf("File glob pattern %s \n", pattern)
+    return "^" + pattern + "$"
 }
 
 func walk(filename string, linkDirname string, followLinks bool, visited map[string]bool, walkFn filepath.WalkFunc) error {

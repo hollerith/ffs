@@ -299,6 +299,8 @@ func parseFlags() (bool, bool, bool, bool, string, int, *regexp.Regexp, *regexp.
 	var root string
 	var depth int
 	var ignoreParser ignore.IgnoreParser
+	var filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex *regexp.Regexp
+	var err error
 
 	pflag.StringVarP(&filePattern, "file", "f", "", "regex pattern to match file names")
 	pflag.StringVarP(&stringPattern, "string", "s", "", "regex pattern to match file string")
@@ -317,27 +319,34 @@ func parseFlags() (bool, bool, bool, bool, string, int, *regexp.Regexp, *regexp.
 	if len(rootArgs) > 0 {
 		homedir, _ := os.UserHomeDir()
 		root = strings.Replace(rootArgs[0], "~", homedir, 1)
-		if strings.Contains(root, "*") && filePattern == "" {
-			root, filePattern = filepath.Split(root)
+		if len(rootArgs) > 1 {
+			root = "."
+			filePattern = strings.Join(rootArgs, "|")
 		} else {
-			_, err := os.Stat(root)
+			info, err := os.Stat(root)
 			if os.IsNotExist(err) {
 				fmt.Printf("Error: directory '%s' does not exist.\n", root)
 				os.Exit(1)
+			}
+			if !info.IsDir() {
+				filePattern = root
+				root = "."
 			}
 		}
 	} else {
 		root = "."
 	}
 
-	var filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex *regexp.Regexp
-	var err error
-
 	if filePattern != "" {
-		filePatternRegex, err = regexp.Compile(filePattern + "$")
+		filePatternRegex, err = regexp.Compile(filePattern)
 		if err != nil {
-			fmt.Printf("Error compiling file pattern regex: %v\n", err)
-			os.Exit(1)
+			// If the compilation fails, assume filePattern is a glob pattern and convert it
+			filePattern = globToRegex(filePattern)
+			filePatternRegex, err = regexp.Compile(filePattern)
+			if err != nil {
+				fmt.Printf("Error compiling file pattern regex: %v\n", err)
+				os.Exit(1)
+			}
 		}
 	}
 
