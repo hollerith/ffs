@@ -7,10 +7,9 @@ import (
 	"strconv"
 	"os"
 	"os/user"
-	"io"
+	"io/ioutil"
 	"syscall"
 	"path/filepath"
-	"github.com/rwcarlsen/goexif/exif"
 )
 
 func replaceNonPrintable(s string) string {
@@ -37,84 +36,103 @@ func humanizeBytes(bytes int64) string {
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
+func Decode(data []byte) string {
+	var exifData strings.Builder
+	var currentString string
+	minLength := 4
+	maxChars := 500 // Maximum number of characters to process
+	charCount := 0
+
+	for _, b := range data {
+		if charCount >= maxChars {
+			break // Stop processing after maxChars
+		}
+		if b >= 32 && b <= 126 { // ASCII printable characters
+			currentString += string(b)
+			charCount++
+		} else {
+			// Only add the string if it is long enough
+			if len(currentString) >= minLength {
+				exifData.WriteString(currentString + "\n")
+			}
+			currentString = "" // Reset the current string
+		}
+	}
+
+	// Check for any remaining string at the end of the data
+	if len(currentString) >= minLength {
+		exifData.WriteString(currentString + "\n")
+	}
+
+	return exifData.String()
+}
+
 func extractFileData(file *os.File) (Metadata, bool, error) {
-	var metadata Metadata
-	isBinary := false
+    var metadata Metadata
+    isBinary := false
 
-	// Get file size, mode, owner, and group
-	fileInfo, err := file.Stat()
-	if err == nil {
-		metadata.Size = fileInfo.Size()
-		metadata.Mode = fileInfo.Mode().String()
-		metadata.Suid = (fileInfo.Mode()&os.ModeSetuid) != 0 && (fileInfo.Mode()&os.ModePerm) >= 04000
+    // Get file size, mode, owner, and group
+    fileInfo, err := file.Stat()
+    if err == nil {
+        metadata.Size = fileInfo.Size()
+        metadata.Mode = fileInfo.Mode().String()
+        metadata.Suid = (fileInfo.Mode()&os.ModeSetuid) != 0 && (fileInfo.Mode()&os.ModePerm) >= 04000
 
-		// Get owner and group ids
-		uid := fileInfo.Sys().(*syscall.Stat_t).Uid
-		gid := fileInfo.Sys().(*syscall.Stat_t).Gid
+        // Get owner and group ids
+        uid := fileInfo.Sys().(*syscall.Stat_t).Uid
+        gid := fileInfo.Sys().(*syscall.Stat_t).Gid
 
-		// Get owner and group names
-		u, err := user.LookupId(fmt.Sprintf("%d", uid))
-		if err == nil {
-			metadata.Owner = fmt.Sprintf("%d - %s", uid, u.Username)
-		} else {
-			metadata.Owner = fmt.Sprintf("%d", uid)
-		}
+        // Get owner and group names
+        u, err := user.LookupId(fmt.Sprintf("%d", uid))
+        if err == nil {
+            metadata.Owner = fmt.Sprintf("%d - %s", uid, u.Username)
+        } else {
+            metadata.Owner = fmt.Sprintf("%d", uid)
+        }
 
-		g, err := user.LookupGroupId(fmt.Sprintf("%d", gid))
-		if err == nil {
-			metadata.Group = fmt.Sprintf("%d - %s", gid, g.Name)
-		} else {
-			metadata.Group = fmt.Sprintf("%d", gid)
-		}
+        g, err := user.LookupGroupId(fmt.Sprintf("%d", gid))
+        if err == nil {
+            metadata.Group = fmt.Sprintf("%d - %s", gid, g.Name)
+        } else {
+            metadata.Group = fmt.Sprintf("%d", gid)
+        }
 
-		// Get file mod time
-		modTime := fileInfo.ModTime().Format("2006-01-02 15:04:05")
-		metadata.ModTime = modTime
-	}
+        // Get file mod time
+        modTime := fileInfo.ModTime().Format("2006-01-02 15:04:05")
+        metadata.ModTime = modTime
+    }
 
-	// Determine number of bytes to read
-	numBytes := fileInfo.Size()
-	if numBytes > 512 {
-		numBytes = 512
-	}
+    // Determine number of bytes to read
+    numBytes := fileInfo.Size()
+    if numBytes > 512 {
+        numBytes = 512
+    }
 
-	// Extract MIME type
-	buf := make([]byte, numBytes)
-	_, err = file.Read(buf)
-	if err != nil {
-		return metadata, isBinary, err
-	}
-	metadata.MimeType = http.DetectContentType(buf)
+    // Reset file pointer to the beginning of the file
+    file.Seek(0, 0)
 
-	// Check if MIME type belongs to a group of known binary file types
-	if !strings.HasPrefix(metadata.MimeType, "text/") {
-		isBinary = true
-	}
+    // Read the file into a buffer
+    buf, err := ioutil.ReadAll(file)
+    if err != nil {
+        return metadata, isBinary, err
+    }
 
-	// If the file is not an image type return without exifdata
-	if !strings.HasPrefix(metadata.MimeType, "image/") {
-		return metadata, isBinary, nil
-	}
+    metadata.MimeType = http.DetectContentType(buf)
 
-	// Extract EXIF metadata
-	file.Seek(0, 0) // reset file pointer to the beginning of the file
+    // Check if MIME type belongs to a group of known binary file types
+    if !strings.HasPrefix(metadata.MimeType, "text/") {
+        isBinary = true
+    }
 
-	exifData, err := exif.Decode(file)
-	if err != nil {
-		if err == io.EOF {
-			return metadata, isBinary, fmt.Errorf("EOF reached while reading file")
-		}
-		return metadata, isBinary, err
-	}
+    // If the file is not an image type return without exifdata
+    if !strings.HasPrefix(metadata.MimeType, "image/") {
+        return metadata, isBinary, nil
+    }
 
-	// Convert EXIF metadata to JSON string
-	jsonByte, err := exifData.MarshalJSON()
-	if err != nil {
-		return metadata, isBinary, err
-	}
-	metadata.ExifData = string(jsonByte)
+    // Decode the EXIF data from the buffer
+	metadata.ExifData = Decode(buf)
 
-	return metadata, isBinary, nil
+    return metadata, isBinary, nil
 }
 
 // Utility function to format a column with a fixed width
@@ -131,7 +149,6 @@ func globToRegex(pattern string) string {
     pattern = strings.Replace(pattern, ".", "\\.", -1)
     pattern = strings.Replace(pattern, "*", ".*", -1)
     pattern = strings.Replace(pattern, "?", ".", -1)
-	fmt.Printf("File glob pattern %s \n", pattern)
     return "^" + pattern + "$"
 }
 
