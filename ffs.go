@@ -193,11 +193,7 @@ func main() {
 		} else {
 			// Print results
 			if (matchCount > lastCount) || (stringPatternRegex == nil && hexPatternRegex == nil && metaPatternRegex == nil) {
-				if metaPatternRegex != nil {
-					fmt.Printf("\x1b[38;5;221m%s\x1b[0m:\x1b[38;5;39m%s\x1b[0m:\x1b[38;5;8m%s\x1b[0m\n", path, "EXIF", replaceNonPrintable(metadataString))
-				} else {
-					lastDir, fileCount, matchCount, byteCount = printResults(fileCount, lastDir, directory, filename, metaData, fi, byteCount, matchCount, verbose, tree, errors)
-				}
+				lastDir, fileCount, matchCount, byteCount = printResults(fileCount, lastDir, directory, filename, metaData, fi, byteCount, matchCount, verbose, tree, errors)
 			}
 		}
 
