@@ -40,26 +40,24 @@ func Decode(data []byte) string {
 	var exifData strings.Builder
 	var currentString string
 	minLength := 4
-	maxChars := 500 // Maximum number of characters to process
+	maxChars := 500
 	charCount := 0
 
 	for _, b := range data {
 		if charCount >= maxChars {
-			break // Stop processing after maxChars
+			break
 		}
-		if b >= 32 && b <= 126 { // ASCII printable characters
+		if b >= 32 && b <= 126 {
 			currentString += string(b)
 			charCount++
 		} else {
-			// Only add the string if it is long enough
 			if len(currentString) >= minLength {
 				exifData.WriteString(currentString + "\n")
 			}
-			currentString = "" // Reset the current string
+			currentString = ""
 		}
 	}
 
-	// Check for any remaining string at the end of the data
 	if len(currentString) >= minLength {
 		exifData.WriteString(currentString + "\n")
 	}

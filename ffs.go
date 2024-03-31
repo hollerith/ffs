@@ -45,6 +45,7 @@ var lastDir string
 var fileCount int
 var matchCount int
 var byteCount int64
+var metadataString string
 
 func main() {
 	verbose, binary, errors, links, root, depth, filePatternRegex, stringPatternRegex, hexPatternRegex, metaPatternRegex, globalPattern, ignoreParser, tree := parseFlags()
@@ -119,7 +120,7 @@ func main() {
 
 		// Check for metadata pattern match
 		if metaPatternRegex != nil {
-			metadataString := fmt.Sprintf("%d %s %s %s %s %s %s", metaData.Size, metaData.Mode, metaData.Owner, metaData.Group, metaData.ModTime, metaData.MimeType, metaData.ExifData)
+			metadataString = fmt.Sprintf("%d %s %s %s %s %s %s", metaData.Size, metaData.Mode, metaData.Owner, metaData.Group, metaData.ModTime, metaData.MimeType, metaData.ExifData)
 			if metaPatternRegex.MatchString(metadataString) {
 				matchCount++
 			}
@@ -192,7 +193,11 @@ func main() {
 		} else {
 			// Print results
 			if (matchCount > lastCount) || (stringPatternRegex == nil && hexPatternRegex == nil && metaPatternRegex == nil) {
-				lastDir, fileCount, matchCount, byteCount = printResults(fileCount, lastDir, directory, filename, metaData, fi, byteCount, matchCount, verbose, tree, errors)
+				if metaPatternRegex != nil {
+					fmt.Printf("\x1b[38;5;221m%s\x1b[0m:\x1b[38;5;39m%s\x1b[0m:\x1b[38;5;8m%s\x1b[0m\n", path, "EXIF", replaceNonPrintable(metadataString))
+				} else {
+					lastDir, fileCount, matchCount, byteCount = printResults(fileCount, lastDir, directory, filename, metaData, fi, byteCount, matchCount, verbose, tree, errors)
+				}
 			}
 		}
 
